@@ -3,6 +3,7 @@ import torch
 from torch.utils.data import DataLoader
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering
+import threading
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -38,7 +39,6 @@ def eval_op(model, loader):
             correct += (predicted == y).sum().item()
 
     return correct/samples
-
 
 
 def copy(target, source):
@@ -88,12 +88,20 @@ class Leader(FederatedTrainingDevice):
         self.client_list = []
         self.dW_list = []
         self.dW_avg = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
+        self.ctx = get_context("spawn")
+        self.dw_q = ctx.Queue()
 
     def compute_dw_avg(self):
-        for name in self.dW_avg:
-            tmp = torch.mean(torch.stack([dW[name].data for dW in self.dW_list]), dim=0).clone()
-            self.dW_avg[name].data += tmp
-        self.dW_list = []
+        with lock:
+            for name in self.dW_avg:
+                tmp = torch.mean(torch.stack([dW[name].data for dW in self.dW_list]), dim=0).clone()
+                self.dW_avg[name].data += tmp
+            self.dW_list = []
+
+    def send_dW_to_server(self, server):
+        print("[Leader - %s]: send dw to server" % self.id)
+        # server.dW_list.append(self.dW)
+        server.dw_q.put(self.dW)
 
     def select_clients(self, clients, frac=1.0):
         return random.sample(clients, int(len(clients)*frac))
@@ -128,8 +136,15 @@ class Client(FederatedTrainingDevice):
         return train_stats  
     
     def send_dW_to_leader(self, leader):
+        print("[Client - %s]: send dw to leader %s" % (self.id, leader.id))
         # print("leader.dW_list.len = ", len(leader.dW_list))
-        leader.dW_list.append(self.dW)
+        # leader.dW_list.append(self.dW)
+        leader.dw_q.put(self.dW)
+
+    def send_dW_to_server(self, server):
+        print("[Client - %s]: send dw to server" % self.id)
+        # server.dW_list.append(self.dW)
+        server.dw_q.put(self.dW)
 
     def reset(self): 
         copy(target=self.W, source=self.W_old)
@@ -141,10 +156,19 @@ class Server(FederatedTrainingDevice):
         self.loader = DataLoader(self.data, batch_size=128, shuffle=False)
         self.model_cache = []
         self.eval_loader = testloader
+        self.dW_list = []
+        self.ctx = get_context("spawn")
+        self.dw_q = ctx.Queue()
     
     def select_clients(self, clients, frac=1.0):
         return random.sample(clients, int(len(clients)*frac)) 
     
+    def update_model(self):
+        if not evaluator_q.empty():
+            dw = dw_q.get()
+            reduce_add_average(targets=[self.W], sources=[dw])
+            print("[Server]: updated model")
+
     def aggregate_avg_dws(self, leaders):
         reduce_add_average(targets=[self.W], sources=[leader.dW_avg for leader in leaders])
 
