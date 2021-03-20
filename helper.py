@@ -13,7 +13,7 @@ class ExperimentLogger:
 
 
 def display_train_stats(cfl_stats, communication_rounds):
-    clear_output(wait=True)
+    clear_output(wait=False)
     
     plt.figure(figsize=(12,4))
     
