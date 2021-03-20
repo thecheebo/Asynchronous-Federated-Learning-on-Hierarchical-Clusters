@@ -81,9 +81,25 @@ class FederatedTrainingDevice(object):
     def evaluate(self, loader=None):
         return eval_op(self.model, self.eval_loader if not loader else loader)
   
+class Leader(FederatedTrainingDevice):
+    def __init__(self, model_fn, data, id):
+        super().__init__(model_fn, data)
+        self.id = id
+        self.client_list = []
+        self.dW_list = []
+        self.dW_avg = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
+
+    def compute_dw_avg(self):
+        for name in self.dW_avg:
+            tmp = torch.mean(torch.stack([dW[name].data for dW in self.dW_list]), dim=0).clone()
+            self.dW_avg[name].data += tmp
+        self.dW_list = []
+
+    def select_clients(self, clients, frac=1.0):
+        return random.sample(clients, int(len(clients)*frac))
   
 class Client(FederatedTrainingDevice):
-    def __init__(self, model_fn, optimizer_fn, data, idnum, batch_size=128, train_frac=0.8):
+    def __init__(self, model_fn, optimizer_fn, data, idnum, leader_id=0, batch_size=128, train_frac=0.8):
         super().__init__(model_fn, data)  
         self.optimizer = optimizer_fn(self.model.parameters())
             
@@ -96,6 +112,7 @@ class Client(FederatedTrainingDevice):
         self.eval_loader = DataLoader(data_eval, batch_size=batch_size, shuffle=False)
         
         self.id = idnum
+        self.leader_id = leader_id
         
         self.dW = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
         self.W_old = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
@@ -105,29 +122,34 @@ class Client(FederatedTrainingDevice):
     
     def compute_weight_update(self, epochs=1, loader=None):
         copy(target=self.W_old, source=self.W)
-        self.optimizer.param_groups[0]["lr"]*=0.99
+#         self.optimizer.param_groups[0]["lr"]*=0.99
         train_stats = train_op(self.model, self.train_loader if not loader else loader, self.optimizer, epochs)
         subtract_(target=self.dW, minuend=self.W, subtrahend=self.W_old)
         return train_stats  
+    
+    def send_dW_to_leader(self, leader):
+        # print("leader.dW_list.len = ", len(leader.dW_list))
+        leader.dW_list.append(self.dW)
 
     def reset(self): 
         copy(target=self.W, source=self.W_old)
 
-    def getId(self):
-        return self.id
-    
     
 class Server(FederatedTrainingDevice):
-    def __init__(self, model_fn, data):
+    def __init__(self, model_fn, data, testloader):
         super().__init__(model_fn, data)
         self.loader = DataLoader(self.data, batch_size=128, shuffle=False)
         self.model_cache = []
+        self.eval_loader = testloader
     
     def select_clients(self, clients, frac=1.0):
         return random.sample(clients, int(len(clients)*frac)) 
     
+    def aggregate_avg_dws(self, leaders):
+        reduce_add_average(targets=[self.W], sources=[leader.dW_avg for leader in leaders])
+
     def aggregate_weight_updates(self, clients):
-        reduce_add_average(target=self.W, sources=[client.dW for client in clients])
+        reduce_add_average(targets=[self.W], sources=[client.dW for client in clients])
         
     def aggregate_clusterwise(self, client_clusters):
         for cluster in client_clusters:
