@@ -3,7 +3,7 @@ import torch
 from torch.utils.data import DataLoader
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering
-import threading
+from multiprocessing import Process, Pool, get_context, Queue
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -89,14 +89,14 @@ class Leader(FederatedTrainingDevice):
         self.dW_list = []
         self.dW_avg = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
         self.ctx = get_context("spawn")
-        self.dw_q = ctx.Queue()
+        self.dw_q = self.ctx.Queue()
 
     def compute_dw_avg(self):
-        with lock:
-            for name in self.dW_avg:
-                tmp = torch.mean(torch.stack([dW[name].data for dW in self.dW_list]), dim=0).clone()
-                self.dW_avg[name].data += tmp
-            self.dW_list = []
+        # with lock:
+        for name in self.dW_avg:
+            tmp = torch.mean(torch.stack([dW[name].data for dW in self.dW_list]), dim=0).clone()
+            self.dW_avg[name].data += tmp
+        self.dW_list = []
 
     def send_dW_to_server(self, server):
         print("[Leader - %s]: send dw to server" % self.id)
@@ -129,10 +129,14 @@ class Client(FederatedTrainingDevice):
         copy(target=self.W, source=server.W)
     
     def compute_weight_update(self, epochs=1, loader=None):
+        print("**** here - 1")
         copy(target=self.W_old, source=self.W)
 #         self.optimizer.param_groups[0]["lr"]*=0.99
+        print("**** here - 2")
         train_stats = train_op(self.model, self.train_loader if not loader else loader, self.optimizer, epochs)
+        print("**** here - 3")
         subtract_(target=self.dW, minuend=self.W, subtrahend=self.W_old)
+        print("**** here - 4")
         return train_stats  
     
     def send_dW_to_leader(self, leader):
@@ -158,14 +162,14 @@ class Server(FederatedTrainingDevice):
         self.eval_loader = testloader
         self.dW_list = []
         self.ctx = get_context("spawn")
-        self.dw_q = ctx.Queue()
+        self.dw_q = self.ctx.Queue()
     
     def select_clients(self, clients, frac=1.0):
         return random.sample(clients, int(len(clients)*frac)) 
     
     def update_model(self):
-        if not evaluator_q.empty():
-            dw = dw_q.get()
+        if not self.dw_q.empty():
+            dw = self.dw_q.get()
             reduce_add_average(targets=[self.W], sources=[dw])
             print("[Server]: updated model")
 
