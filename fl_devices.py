@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering
 from multiprocessing import Process, Pool, get_context, Queue
+from threading import Thread, Lock
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -69,7 +70,6 @@ def pairwise_angles(sources):
 
     return angles.numpy()
 
-
         
 class FederatedTrainingDevice(object):
     def __init__(self, model_fn, data):
@@ -81,31 +81,7 @@ class FederatedTrainingDevice(object):
     def evaluate(self, loader=None):
         return eval_op(self.model, self.eval_loader if not loader else loader)
   
-class Leader(FederatedTrainingDevice):
-    def __init__(self, model_fn, data, id):
-        super().__init__(model_fn, data)
-        self.id = id
-        self.client_list = []
-        self.dW_list = []
-        self.dW_avg = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
-        self.ctx = get_context("spawn")
-        self.dw_q = self.ctx.Queue()
-
-    def compute_dw_avg(self):
-        # with lock:
-        for name in self.dW_avg:
-            tmp = torch.mean(torch.stack([dW[name].data for dW in self.dW_list]), dim=0).clone()
-            self.dW_avg[name].data += tmp
-        self.dW_list = []
-
-    def send_dW_to_server(self, server):
-        print("[Leader - %s]: send dw to server" % self.id)
-        # server.dW_list.append(self.dW)
-        server.dw_q.put(self.dW)
-
-    def select_clients(self, clients, frac=1.0):
-        return random.sample(clients, int(len(clients)*frac))
-  
+ 
 class Client(FederatedTrainingDevice):
     def __init__(self, model_fn, optimizer_fn, data, idnum, leader_id=0, batch_size=128, train_frac=0.8):
         super().__init__(model_fn, data)  
@@ -129,14 +105,10 @@ class Client(FederatedTrainingDevice):
         copy(target=self.W, source=server.W)
     
     def compute_weight_update(self, epochs=1, loader=None):
-        print("**** here - 1")
         copy(target=self.W_old, source=self.W)
 #         self.optimizer.param_groups[0]["lr"]*=0.99
-        print("**** here - 2")
         train_stats = train_op(self.model, self.train_loader if not loader else loader, self.optimizer, epochs)
-        print("**** here - 3")
         subtract_(target=self.dW, minuend=self.W, subtrahend=self.W_old)
-        print("**** here - 4")
         return train_stats  
     
     def send_dW_to_leader(self, leader):
@@ -149,11 +121,56 @@ class Client(FederatedTrainingDevice):
         print("[Client - %s]: send dw to server" % self.id)
         # server.dW_list.append(self.dW)
         server.dw_q.put(self.dW)
+        # print("[Client - %s]: sent dw to server" % self.id)
 
     def reset(self): 
         copy(target=self.W, source=self.W_old)
 
-    
+
+class Leader(FederatedTrainingDevice):
+    def __init__(self, model_fn, data, id):
+        super().__init__(model_fn, data)
+        self.id = id
+        self.client_list = []
+        self.dW_list = []
+        self.dW_avg = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
+        self.ctx = get_context("spawn")
+        self.dw_q = self.ctx.Queue()
+        self.lock = Lock()
+
+    def compute_dw_avg(self):
+        dws = []
+        with self.lock:
+            while not self.dw_q.empty():
+                dws.append(self.dw_q.get())
+        if dws:
+            self.dW_avg = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
+            for name in self.dW_avg:
+                for dW in dws:
+                    self.dW_avg[name].data += dW[name].data
+                self.dW_avg[name].data /= len(dws)
+
+                # tmp = torch.mean(torch.stack([dW[name].data for dW in dws]), dim=0).clone()
+                # self.dW_avg[name].data += tmp
+                # self.dW_avg[name].data \= len(dws)
+            return True
+        return False
+
+        # with lock:
+        # for name in self.dW_avg:
+        #     tmp = torch.mean(torch.stack([dW[name].data for dW in self.dW_list]), dim=0).clone()
+        #     self.dW_avg[name].data += tmp
+        # self.dW_list = []
+
+    def send_dW_to_server(self, server):
+        print("[Leader - %s]: send dw to server" % self.id)
+        # server.dW_list.append(self.dW)
+        server.dw_q.put(self.dW_avg)
+
+    def select_clients(self, clients, frac=1.0):
+        return random.sample(clients, int(len(clients)*frac))
+
+
 class Server(FederatedTrainingDevice):
     def __init__(self, model_fn, data, testloader):
         super().__init__(model_fn, data)
@@ -163,15 +180,26 @@ class Server(FederatedTrainingDevice):
         self.dW_list = []
         self.ctx = get_context("spawn")
         self.dw_q = self.ctx.Queue()
+        self.lock = Lock()
     
     def select_clients(self, clients, frac=1.0):
         return random.sample(clients, int(len(clients)*frac)) 
     
     def update_model(self):
-        if not self.dw_q.empty():
-            dw = self.dw_q.get()
-            reduce_add_average(targets=[self.W], sources=[dw])
-            print("[Server]: updated model")
+        # print("qsize = ", self.dw_q.qsize())
+        dws = []
+        with self.lock:
+            while not self.dw_q.empty():
+                dws.append(self.dw_q.get())
+        if dws:
+            reduce_add_average(targets=[self.W], sources=dws)
+            print("[Server]: Updated model")
+
+        # if not self.dw_q.empty():
+        #     dw = self.dw_q.get()
+        #     reduce_add_average(targets=[self.W], sources=[dw])
+
+
 
     def aggregate_avg_dws(self, leaders):
         reduce_add_average(targets=[self.W], sources=[leader.dW_avg for leader in leaders])

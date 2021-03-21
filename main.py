@@ -39,7 +39,7 @@ acc_server = 0.0
 
 lock = Lock()
 
-def main(N_CLIENTS, N_LEADERS, EVAL_ROUNDS, SELECT_CLIENT_FRAC, EVAL_INTERVAL):
+def main(N_CLIENTS, N_LEADERS, SELECT_CLIENT_FRAC, AGGR_INTERVAL):
     global clients, leaders
     stop_flag = False
 
@@ -52,80 +52,75 @@ def main(N_CLIENTS, N_LEADERS, EVAL_ROUNDS, SELECT_CLIENT_FRAC, EVAL_INTERVAL):
         ### Server process ### 
         print("--> Creating server process...")
         server = Server(CF10Net, test_data, testloader)
-        server_thread = Thread(name="server", target=server_loop, args=(server, EVAL_ROUNDS, EVAL_INTERVAL,  lambda: stop_flag))
-        # server_thread.start()
-        # ctx = get_context("spawn")
-        # jobs = []
-        # for i in range(3):
-        #     p = ctx.Process(target=server_loop, args=(server, EVAL_ROUNDS, EVAL_INTERVAL))
-        #     jobs.append(p)
-        #     p.start()
+        server_thread = Thread(name="server", target=server_loop, args=(server, lambda: stop_flag))
+        server_thread.start()
 
         ### Client processes ### 
         print("--> Creating client processes...")
         clients = [Client(CF10Net, lambda x : torch.optim.SGD(x, lr=0.001, momentum=0.9), dat, idnum=i) for i, dat in enumerate(client_datas)]
         client_threads = [Thread(name="clt%s" % client.id, target = train_loop, args=(client, server, lambda: stop_flag)) for client in clients]
+        
         for thread in client_threads:
             thread.start()
         
-        # ### Leader processes ### 
-        # print("--> Creating leader processes...")
-        # if LEADER:
-        #     leaders = [Leader(CF10Net, test_data, i) for i in range(N_LEADERS)]
-        #     for client in clients:
-        #         leader_id = int(client.id / int((N_CLIENTS/N_LEADERS)))
-        #         client.leader_id = leader_id
-        #         leaders[leader_id].client_list.append(client)
-        #     leader_threads = [Thread(name="led%s" % leader.id, target = leader_loop, args=(leader, server, lambda: stop_flag)) for leader in leaders]
-        #     for thread in leader_threads:
-        #         thread.start()
+        ### Leader processes ### 
+        if LEADER:
+            print("--> Creating leader processes...")
+            leaders = [Leader(CF10Net, test_data, i) for i in range(N_LEADERS)]
+            for client in clients:
+                leader_id = int(client.id / int((N_CLIENTS / N_LEADERS)))
+                client.leader_id = leader_id
+                leaders[leader_id].client_list.append(client)
+            leader_threads = [Thread(name="led%s" % leader.id, target = leader_loop, args=(leader, server, AGGR_INTERVAL, lambda: stop_flag)) for leader in leaders]
+            for thread in leader_threads:
+                thread.start()
 
     except (KeyboardInterrupt, SystemExit):
-        logger.debug("Gracefully shutting client down...")
+        print("Gracefully shutting client down...")
     finally:
         stop_flag = True
-        # server_thread.join()
+        server_thread.join()
         for thread in client_threads:
             thread.join()
+        if LEADER:
+            for thread in leader_threads:
+                thread.join()
         yappi.stop()
-        # p.terminate()
-        # p.join()
-
-def leader_loop(leader, server, should_stop):
-    rd = 1
-    while True:
-        if should_stop():
-            break
-        leader.compute_dw_avg()
-        leader.send_dW_to_server(server)
-        print("[Leader - %s] rd = %s" % (leader.id, rd))
-        rd += 1
 
 
 def train_loop(client, server, should_stop):
     epoch = 1
     while True:
-        if epoch == 1:
-            client.synchronize_with_server(server)
-        if should_stop():
-            break
-        print("**** here")
+        # if epoch == 1:
+        client.synchronize_with_server(server)
+        # if should_stop():
+        #     print("stop!")
+        #     break
         train_stats = client.compute_weight_update(epochs=1)
         client.reset()
         if LEADER:
-            print("**** clt to leader")
             client.send_dW_to_leader(leaders[client.leader_id])
         else:
-            print("**** clt to server")
             client.send_dW_to_server(server)
             
         print("[Client - %s] epoch = %s" % (client.id, epoch))
         epoch += 1
 
 
-def server_loop(server, eval_rounds, eval_interval, should_stop):
+def leader_loop(leader, server, aggr_interval, should_stop):
+    rd = 1
+    while True:
+        # if should_stop():
+        #     break
+        if leader.compute_dw_avg():
+            leader.send_dW_to_server(server)
+        print("[Leader - %s] aggr avg rd = %s" % (leader.id, rd))
+        rd += 1
+        time.sleep(aggr_interval)
+
+
+def server_loop(server, should_stop):
     global acc_server, cfl_stats
-    # start_time = datetime.now()
 
     rd = 1
     while True:
@@ -134,7 +129,6 @@ def server_loop(server, eval_rounds, eval_interval, should_stop):
         print("[Server] round = %s, acc = %s" % (rd, acc_server))
         cfl_stats.log({"acc_server" : acc_server, "rounds" : rd})
         # display_train_stats(cfl_stats, eval_rounds)
-        time.sleep(eval_interval)
         rd += 1
 
 
@@ -176,15 +170,14 @@ if __name__ == "__main__":
     try:
         N_CLIENTS = int(sys.argv[1])
         N_LEADERS = int(sys.argv[2])
-        EVAL_ROUNDS = int(sys.argv[3])
-        SELECT_CLIENT_FRAC = float(sys.argv[4])
-        EVAL_INTERVAL = int(sys.argv[5])
+        SELECT_CLIENT_FRAC = float(sys.argv[3])
+        AGGR_INTERVAL = int(sys.argv[4])
     except Exception as e:
-        print("args: N_CLIENTS, N_LEADERS, EVAL_ROUNDS, SELECT_CLIENT_FRAC, EVAL_INTERVAL")
+        print("args: N_CLIENTS, N_LEADERS, SELECT_CLIENT_FRAC, AGGR_INTERVAL")
         sys.exit()
 
     LEADER = True if N_LEADERS > 0 else False
 
-    main(N_CLIENTS, N_LEADERS, EVAL_ROUNDS, SELECT_CLIENT_FRAC, EVAL_INTERVAL)
+    main(N_CLIENTS, N_LEADERS, SELECT_CLIENT_FRAC, AGGR_INTERVAL)
 
 
