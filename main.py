@@ -54,9 +54,7 @@ def main(N_CLIENTS, N_LEADERS, SELECT_CLIENT_FRAC, AGGR_INTERVAL):
         ### Server process ### 
         print("--> Creating server thread...")
         server = Server(CF10Net, test_data, testloader)
-        server_soc = socket.socket()
-        server_soc.bind(('', 70))
-        server_recv_thread = Thread(name="server_recv", target=server_recv_loop, args=(server, server_soc, lambda: stop_flag))
+        server_recv_thread = Thread(name="server_recv", target=server_recv_loop, args=(server, lambda: stop_flag))
         server_recv_thread.start()
         server_thread = Thread(name="server", target=server_loop, args=(server, lambda: stop_flag))
         server_thread.start()
@@ -67,10 +65,9 @@ def main(N_CLIENTS, N_LEADERS, SELECT_CLIENT_FRAC, AGGR_INTERVAL):
         # client_threads = [Thread(name="clt%s" % client.id, target = train_loop, args=(client, server, lambda: stop_flag)) for client in clients]
         client_threads = []
         for i, client in enumerate(clients):
-            soc = socket.socket()
-            soc.bind(('', 90 + i))
-            recv_thread = Thread(name="clt-recv-%s" % client.id, target = client_recv_loop, args=(client, soc, lambda: stop_flag))
-            trn_thread = Thread(name="clt-trn-%s" % client.id, target = client_trn_loop, args=(client, soc, lambda: stop_flag))
+            server.client_list.append(('127.0.0.1', 90 + client.id))
+            recv_thread = Thread(name="clt-recv-%s" % client.id, target = client_recv_loop, args=(client, lambda: stop_flag))
+            trn_thread = Thread(name="clt-trn-%s" % client.id, target = client_trn_loop, args=(client, lambda: stop_flag))
             client_threads.append(recv_thread)
             client_threads.append(trn_thread)
         
@@ -94,7 +91,7 @@ def main(N_CLIENTS, N_LEADERS, SELECT_CLIENT_FRAC, AGGR_INTERVAL):
     finally:
         stop_flag = True
         server_thread.join()
-        server_soc_thread.join()
+        server_recv_thread.join()
         for thread in client_threads:
             thread.join()
         if LEADER:
@@ -103,20 +100,56 @@ def main(N_CLIENTS, N_LEADERS, SELECT_CLIENT_FRAC, AGGR_INTERVAL):
         yappi.stop()
 
 
-def client_recv_loop(client, soc, should_stop):
-    soc.listen(1)
+def recv(soc, recv_start_time):
+    recv_data = b""
     while True:
-        conn, addr = soc.accept()
-        data = conn.recv(16)
-        model = pickle.loads(data)
-        print("[Client - %s]: received '%s' from addr %s" % (client.id, model, addr))
-        client.synchronize_model(model)
+        try:
+            conn, addr = soc.accept()
+            data = conn.recv(1024)
+            recv_data += data
+
+            if data == b'':
+                recv_data = b""
+                if (time.time() - recv_start_time) > 5:
+                    return None, 0 
+            elif str(data)[-2] == '.':
+                print("[Client - %s]: received '%s' from addr %s" % (client.id, data, addr))
+                if len(recv_data) > 0:
+                    try:
+                        recv_data = pickle.loads(recv_data)
+                        return recv_data, 1
+                    except BaseException as e:
+                        return None, 0
+            else:
+                recv_start_time = time.time()
+        except BaseException as e:
+            return None, 0
+
+
+def client_recv_loop(client, should_stop):
+    soc = socket.socket()
+    soc.bind(('', 90 + client.id))
+    soc.listen(1)
+
+    while True:
+        print("client listening...")
+        recv_start_time = time.time()
+        time_struct = time.gmtime()
+        recv_data, status = recv(soc, recv_start_time)
+        if status == 0:
+            self.connection.close()
+            print("client self.connection.close()")
+            break
+        print("[Client - %s]: received '%s' from addr %s" % (client.id, recv_data, addr))
+        client.sync_model(recv_data)
     
 
-def client_trn_loop(client, soc, should_stop):
+def client_trn_loop(client, should_stop):
     epoch = 1
-    soc.connect('localhost', 70)
+    soc = socket.socket()
+    soc.connect(('127.0.0.1', 70))
     while True:
+        print("Training...")
         # if should_stop():
         #     print("stop!")
         #     break
@@ -127,6 +160,8 @@ def client_trn_loop(client, soc, should_stop):
 
         # send dw to server/leader
         data = pickle.dumps(client.dW)
+        print("train done. sending")
+        print(data)
         soc.sendall(data)
 
         print("[Client - %s] epoch = %s" % (client.id, epoch))
@@ -145,19 +180,26 @@ def leader_loop(leader, server, aggr_interval, should_stop):
         time.sleep(aggr_interval)
 
 
-def server_recv_loop(server, soc, should_stop):
-    server_soc.listen(5)
+def server_recv_loop(server, should_stop):
+    soc = socket.socket()
+    soc.bind(('', 70))
+    soc.listen(5)
     while True:
-        print("waiting...")
-        conn, addr = soc.accept()
-        data = conn.recv(16)
-        dw = pickle.loads(data)
-        print("[Server]: received '%s' from addr %s" % (dw, addr))
-        server.dw_q.put(data)
+        print("server listening...")
+        recv_start_time = time.time()
+        time_struct = time.gmtime()
+        recv_data, status = recv(soc, recv_start_time)
+        if status == 0:
+            soc.close()
+            print("server self.connection.close()")
+            break
+        print("[Server]: received '%s' from addr %s" % (recv_data, addr))
+        server.dw_q.put(recv_data)
 
 
 def server_loop(server, should_stop):
     global acc_server, cfl_stats
+    soc = socket.socket()
 
     rd = 1
     while True:
@@ -166,7 +208,14 @@ def server_loop(server, should_stop):
         print("[Server] round = %s, acc = %s" % (rd, acc_server))
         cfl_stats.log({"acc_server" : acc_server, "rounds" : rd})
         # display_train_stats(cfl_stats, eval_rounds)
-        # TODO: send model to clients/leaders periodically
+        # send model to clients/leaders periodically
+        for client in server.client_list:
+            # soc.connect(client)
+            soc.connect(('127.0.0.1', 90))
+            data = pickle.dumps(server.W)
+            print("len of data = ", len(data))
+            soc.sendall(data)
+            soc.close()
         rd += 1
 
 
