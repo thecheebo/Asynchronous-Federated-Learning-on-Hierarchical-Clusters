@@ -62,7 +62,6 @@ def main(N_CLIENTS, N_LEADERS, SELECT_CLIENT_FRAC, AGGR_INTERVAL):
         ### Client processes ### 
         print("--> Creating client threads...")
         clients = [Client(CF10Net, lambda x : torch.optim.SGD(x, lr=0.001, momentum=0.9), dat, idnum=i) for i, dat in enumerate(client_datas)]
-        # client_threads = [Thread(name="clt%s" % client.id, target = train_loop, args=(client, server, lambda: stop_flag)) for client in clients]
         client_threads = []
         for i, client in enumerate(clients):
             server.client_list.append(('127.0.0.1', 90 + client.id))
@@ -100,11 +99,10 @@ def main(N_CLIENTS, N_LEADERS, SELECT_CLIENT_FRAC, AGGR_INTERVAL):
         yappi.stop()
 
 
-def recv(soc, recv_start_time):
+def recv(conn, recv_start_time):
     recv_data = b""
     while True:
         try:
-            conn, addr = soc.accept()
             data = conn.recv(1024)
             recv_data += data
 
@@ -113,7 +111,7 @@ def recv(soc, recv_start_time):
                 if (time.time() - recv_start_time) > 5:
                     return None, 0 
             elif str(data)[-2] == '.':
-                print("[Client - %s]: received '%s' from addr %s" % (client.id, data, addr))
+                # print("[Client - %s]: received '%s' from addr %s" % (client.id, data, addr))
                 if len(recv_data) > 0:
                     try:
                         recv_data = pickle.loads(recv_data)
@@ -127,27 +125,33 @@ def recv(soc, recv_start_time):
 
 
 def client_recv_loop(client, should_stop):
-    soc = socket.socket()
+    soc = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM)
     soc.bind(('', 90 + client.id))
     soc.listen(1)
 
     while True:
-        print("client listening...")
-        recv_start_time = time.time()
-        time_struct = time.gmtime()
-        recv_data, status = recv(soc, recv_start_time)
-        if status == 0:
-            self.connection.close()
-            print("client self.connection.close()")
+        try:
+            print("client listening...",  90 + client.id)
+            conn, addr = soc.accept()
+            recv_start_time = time.time()
+            time_struct = time.gmtime()
+            recv_data, status = recv(conn, recv_start_time)
+            if status == 0:
+                soc.close()
+                print("client-%s soc.close()" % client.id)
+                break
+            print("[Client - %s]: received '%s' from addr %s" % (client.id, len(recv_data), addr))
+            client.sync_model(recv_data)
+        except:
+            soc.close()
+            print("(Timeout) Socket Closed Because no Connections Received.\n")
             break
-        print("[Client - %s]: received '%s' from addr %s" % (client.id, recv_data, addr))
-        client.sync_model(recv_data)
     
 
 def client_trn_loop(client, should_stop):
     epoch = 1
     soc = socket.socket()
-    soc.connect(('127.0.0.1', 70))
+    soc.connect(("127.0.0.1", 70))
     while True:
         print("Training...")
         # if should_stop():
@@ -161,7 +165,6 @@ def client_trn_loop(client, should_stop):
         # send dw to server/leader
         data = pickle.dumps(client.dW)
         print("train done. sending")
-        print(data)
         soc.sendall(data)
 
         print("[Client - %s] epoch = %s" % (client.id, epoch))
@@ -184,22 +187,28 @@ def server_recv_loop(server, should_stop):
     soc = socket.socket()
     soc.bind(('', 70))
     soc.listen(5)
+
     while True:
-        print("server listening...")
-        recv_start_time = time.time()
-        time_struct = time.gmtime()
-        recv_data, status = recv(soc, recv_start_time)
-        if status == 0:
+        try:
+            print("server listening...")
+            conn, addr = soc.accept()
+            recv_start_time = time.time()
+            time_struct = time.gmtime()
+            recv_data, status = recv(conn, recv_start_time)
+            if status == 0:
+                soc.close()
+                print("server soc.close()")
+                break
+            print("[Server]: received '%s' from addr %s" % (len(recv_data), addr))
+            server.dw_q.put(recv_data)
+        except:
             soc.close()
-            print("server self.connection.close()")
+            print("(Timeout) Socket Closed Because no Connections Received.\n")
             break
-        print("[Server]: received '%s' from addr %s" % (recv_data, addr))
-        server.dw_q.put(recv_data)
 
 
 def server_loop(server, should_stop):
     global acc_server, cfl_stats
-    soc = socket.socket()
 
     rd = 1
     while True:
@@ -210,10 +219,10 @@ def server_loop(server, should_stop):
         # display_train_stats(cfl_stats, eval_rounds)
         # send model to clients/leaders periodically
         for client in server.client_list:
-            # soc.connect(client)
-            soc.connect(('127.0.0.1', 90))
+            soc = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM)
+            soc.connect(client)
             data = pickle.dumps(server.W)
-            print("len of data = ", len(data))
+            print("Sending Data to client") 
             soc.sendall(data)
             soc.close()
         rd += 1
