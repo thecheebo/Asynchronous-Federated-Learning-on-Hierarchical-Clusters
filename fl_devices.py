@@ -103,6 +103,9 @@ class Client(FederatedTrainingDevice):
         
     def synchronize_with_server(self, server):
         copy(target=self.W, source=server.W)
+
+    def synchronize_model(self, model):
+        copy(target=self.W, source=model)
     
     def compute_weight_update(self, epochs=1, loader=None):
         copy(target=self.W_old, source=self.W)
