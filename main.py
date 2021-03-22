@@ -115,6 +115,7 @@ def recv(conn, recv_start_time):
                 if len(recv_data) > 0:
                     try:
                         recv_data = pickle.loads(recv_data)
+                        # print("recv_data = ", recv_data)
                         return recv_data, 1
                     except BaseException as e:
                         return None, 0
@@ -222,7 +223,6 @@ def server_loop(server, should_stop):
             soc = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM)
             soc.connect(client)
             data = pickle.dumps(server.W)
-            print("Sending Data to client") 
             soc.sendall(data)
             soc.close()
         rd += 1

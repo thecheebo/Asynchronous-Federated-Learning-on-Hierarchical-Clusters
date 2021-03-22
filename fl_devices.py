@@ -100,18 +100,22 @@ class Client(FederatedTrainingDevice):
         
         self.dW = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
         self.W_old = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
+
+        self.lock = Lock()
         
     def synchronize_with_server(self, server):
         copy(target=self.W, source=server.W)
 
     def sync_model(self, model):
-        copy(target=self.W, source=model)
+        with self.lock:
+            copy(target=self.W, source=model)
     
     def compute_weight_update(self, epochs=1, loader=None):
-        copy(target=self.W_old, source=self.W)
-#         self.optimizer.param_groups[0]["lr"]*=0.99
-        train_stats = train_op(self.model, self.train_loader if not loader else loader, self.optimizer, epochs)
-        subtract_(target=self.dW, minuend=self.W, subtrahend=self.W_old)
+        with self.lock:
+            copy(target=self.W_old, source=self.W)
+#             self.optimizer.param_groups[0]["lr"]*=0.99
+            train_stats = train_op(self.model, self.train_loader if not loader else loader, self.optimizer, epochs)
+            subtract_(target=self.dW, minuend=self.W, subtrahend=self.W_old)
         return train_stats  
     
     def send_dW_to_leader(self, leader):
