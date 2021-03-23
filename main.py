@@ -48,8 +48,8 @@ def main(N_CLIENTS, N_LEADERS, SELECT_CLIENT_FRAC, AGGR_INTERVAL):
     try:
         prepare_data(N_CLIENTS)
 
-        yappi.set_clock_type("wall")
-        yappi.start()
+        # yappi.set_clock_type("wall")
+        # yappi.start()
 
         ### Server process ### 
         print("--> Creating server thread...")
@@ -96,7 +96,7 @@ def main(N_CLIENTS, N_LEADERS, SELECT_CLIENT_FRAC, AGGR_INTERVAL):
         if LEADER:
             for thread in leader_threads:
                 thread.join()
-        yappi.stop()
+        # yappi.stop()
 
 
 def recv(conn, recv_start_time):
