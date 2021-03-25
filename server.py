@@ -6,7 +6,8 @@ import pickle
 from datetime import datetime
 from copy import deepcopy
 from threading import Thread, Lock
-from multiprocessing import Process, Pool, get_context, Queue
+# from multiprocessing import Process, Pool, get_context, Queue
+from queue import Queue
 
 import torch
 import torchvision
@@ -39,6 +40,10 @@ def main(N_CLIENTS):
         server_threads.append(Thread(name="server_upd_eval", 
                                target=server_upd_eval_loop, 
                                args=(server, lambda: stop_flag)))
+        # send thread
+        server_threads.append(Thread(name="server_send",
+                               target=server_send_loop,
+                               args=(server, lambda: stop_flag)))
         for thread in server_threads:
             thread.start()
     except (KeyboardInterrupt, SystemExit):
@@ -47,6 +52,7 @@ def main(N_CLIENTS):
         stop_flag = True
         for thread in server_threads:
             thread.join()
+        server.dw_q.join()
 
 
 def server_recv_loop(server, should_stop):
@@ -54,47 +60,51 @@ def server_recv_loop(server, should_stop):
     soc.bind(('', 70))
     soc.listen(1)
 
+    i = 1
     while True:
         try:
-            print("server listening...")
+            print("[Server - recv]: listening...", i)
             conn, addr = soc.accept()
-            recv_start_time = time.time()
-            time_struct = time.gmtime()
-            recv_data, status = recv(conn, recv_start_time)
-            if status == 0:
-                soc.close()
-                print("server soc.close()")
-                break
-            print("[Server]: received '%s' from addr %s" % (len(recv_data), addr))
-            server.dw_q.put(recv_data)
+            print("[Server - recv]: accepted", i)
+            with conn:
+                soc_thread = SocketThread(server = server, conn=conn, client_addr=addr)
+                print("[Server - recv]: created", i)
+                soc_thread.start()
+                print("[Server - recv]: done", i)
         except:
             soc.close()
-            print("(Timeout) Socket Closed Because no Connections Received.\n")
+            print("[Server - recv]: (Timeout) Socket Closed Because no Connections Received.\n")
             break
+        i += 1
 
 
 def server_upd_eval_loop(server, should_stop):
-    global acc_server, cfl_stats
-
+    global acc_server
     rd = 1
     while True:
         if rd == 1 or server.update_model():
-            print("here")
             acc_server = [server.evaluate()]
-            print("[Server] round = %s, acc = %s" % (rd, acc_server))
-            # send model to clients/leaders periodically
-            for client in server.client_list:
-                soc = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM)
-                try:
-                    soc.connect(client)
-                    data = pickle.dumps(server.W)
-                    soc.sendall(data)
-                    soc.close()
-                    print("server send to client ", client) 
-                except:
-                    print("client not up")
-                    soc.close()
+            print("[Server - upd] rd = %s, acc = %s" % (rd, acc_server))
             rd += 1
+
+
+def server_send_loop(server, should_stop):
+    rd = 1
+    while True:
+        for client in server.client_list:
+            soc = socket.socket()
+            try:
+                soc.connect(client)
+                data = pickle.dumps(server.W)
+                soc.sendall(data)
+                soc.close()
+                print("[Server - send]: rd = %s, server send to client %s" % (rd, client)) 
+            except:
+                print("[Server - send]: client not up")
+                soc.close()
+        time.sleep(20)
+        rd += 1
+
 
 
 def prepare_data():
@@ -112,10 +122,10 @@ def prepare_data():
 class Server(FederatedTrainingDevice):
     def __init__(self, model_fn, data, testloader):
         super().__init__(model_fn, data)
-        self.model_cache = []
         self.testloader = testloader
-        self.ctx = get_context("spawn")
-        self.dw_q = self.ctx.Queue()
+        # self.ctx = get_context("spawn")
+        # self.dw_q = self.ctx.Queue()
+        self.dw_q = Queue(maxsize=20)
         self.lock = Lock()
         self.client_list = []
 
@@ -123,17 +133,69 @@ class Server(FederatedTrainingDevice):
         return random.sample(clients, int(len(clients)*frac))
 
     def update_model(self):
-        # print("qsize = ", self.dw_q.qsize())
-        dws = []
-        with self.lock:
-            while not self.dw_q.empty():
-                dws.append(self.dw_q.get())
-        if dws:
-            reduce_add_average(targets=[self.W], sources=dws)
-            print("[Server]: Updated model")
-            return True
-        else:
-            return False
+        # print("update_model???")
+        if not self.dw_q.empty():
+            dws = []
+            with self.lock:
+                while not self.dw_q.empty():
+                    dws.append(self.dw_q.get())
+                    self.dw_q.task_done()
+            if dws:
+                reduce_add_average(targets=[self.W], sources=dws)
+                print("[Server - upd]: Updated model")
+                return True
+        return False
+
+
+class SocketThread(Thread):
+
+    def __init__(self, server, conn, client_addr, buffer_size=1024, recv_timeout=5):
+        Thread.__init__(self)
+        self.server = server
+        self.conn = conn
+        self.client_addr = client_addr
+        self.buffer_size = buffer_size
+        self.recv_timeout = recv_timeout
+
+    def recv(self):
+        received_data = b""
+        while True:
+            try:
+                data = self.conn.recv(self.buffer_size)
+                received_data += data
+                if data == b'':
+                    received_data = b""
+                    if (time.time() - self.recv_start_time) > self.recv_timeout:
+                        return None, 0
+                elif str(data)[-2] == '.':
+                    # print("All data ({data_len} bytes) Received from {client_addr}.".format(client_addr=self.client_addr, data_len=len(received_data)))
+                    if len(received_data) > 0:
+                        try:
+                            received_data = pickle.loads(received_data)
+                            # self.conn.sendall(pickle.dumps("ACK"))
+                            return received_data, 1
+                        except BaseException as e:
+                            print("[Server - recv]: Error Decoding the Client's Data: {msg}.\n".format(msg=e))
+                            return None, 0
+                else:
+                    self.recv_start_time = time.time()
+            except BaseException as e:
+                print("[Server - recv]: Error Receiving Data from the Client: {msg}.\n".format(msg=e))
+                return None, 0
+
+    def run(self):
+        while True:
+            print("[Server - recv]: run while loop...")
+            self.recv_start_time = time.time()
+            recv_data, status = self.recv()
+            if status == 0:
+                self.conn.close()
+                print("[Server - recv]: server self.conn.close()")
+                break
+            print("[Server - recv]: received '%s' from addr %s" % (len(recv_data), self.client_addr))
+
+            self.server.dw_q.put(recv_data)
+            print("[Server - recv]: putted in queue")
 
 
 if __name__ == "__main__":

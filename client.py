@@ -50,24 +50,25 @@ def main(N_CLIENTS):
 def client_recv_loop(client, should_stop):
     soc = socket.socket()
     soc.bind(('', 90 + client.id))
-    soc.listen(1)
+    soc.listen(5)
 
     while True:
         try:
-            print("client listening...",  90 + client.id)
+            print("[Client - %s - recv]: client listening..." % client.id)
             conn, addr = soc.accept()
-            recv_start_time = time.time()
-            time_struct = time.gmtime()
-            recv_data, status = recv(conn, recv_start_time)
+            with conn:
+                recv_start_time = time.time()
+                recv_data, status = recv(conn, recv_start_time)
             if status == 0:
-                soc.close()
-                print("client-%s soc.close()" % client.id)
-                break
-            print("[Client - %s]: received '%s' from addr %s" % (client.id, len(recv_data), addr))
-            client.sync_model(recv_data)
+                conn.close()
+                print("[Client - %s - recv]: conn.close()" % client.id)
+            else:
+                print("[Client - %s - recv]: received '%s' from addr %s" % (client.id, len(recv_data), addr))
+                client.W_new = recv_data
+                client.W_new_recv = True
         except:
             soc.close()
-            print("(Timeout) Socket Closed Because no Connections Received.\n")
+            print("[Client - %s - recv]: (Timeout) Socket Closed Because no Connections Received.\n"  % client.id)
             break
 
 
@@ -77,7 +78,7 @@ def client_trn_loop(client, should_stop):
     try:
         soc.connect(("127.0.0.1", 70))
     except BaseException as e:
-        print("Server not ready yet. Socket Closed.")
+        print("[Client - %s - trn]: Server not ready yet. Socket Closed.")
         soc.close()
 
     while True:
@@ -85,16 +86,24 @@ def client_trn_loop(client, should_stop):
         #     print("stop!")
         #     break
 
+        print("[Client - %s - trn] epoch = %s - begin" % (client.id, epoch))
+
+        client.sync_model()
+        client.W_new_recv = False
+        print("[Client - %s - trn] epoch = %s - sync done" % (client.id, epoch))
+
         # train
         train_stats = client.compute_weight_update(epochs=1)
+        print("[Client - %s - trn] epoch = %s - train done" % (client.id, epoch))
         client.reset()
+        print("[Client - %s - trn] epoch = %s - reset done" % (client.id, epoch))
 
         # send dw to server/leader
-        data = pickle.dumps(client.dW)
-        print("train done. sending, len = ", len(data))
-        soc.sendall(data)
+        if epoch % 2 == 0:
+            data = pickle.dumps(client.dW)
+            soc.sendall(data)
+            print("[Client - %s - trn] epoch = %s - done, sent to server" % (client.id, epoch))
 
-        print("[Client - %s] epoch = %s" % (client.id, epoch))
         epoch += 1
 
 
@@ -135,25 +144,27 @@ class Client(FederatedTrainingDevice):
         self.dW = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
         self.W_old = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
 
+        self.W_new = None
+        self.W_new_recv = False
+
         self.lock = Lock()
 
-    def sync_model(self, model):
-        with self.lock:
-            copy(target=self.W, source=model)
+    def sync_model(self):
+        if (self.W_new_recv):
+            # with self.lock:
+            copy(target=self.W, source=self.W_new)
+            self.W_new_recv = False
 
     def compute_weight_update(self, epochs=1, loader=None):
-        with self.lock:
-            copy(target=self.W_old, source=self.W)
-#             self.optimizer.param_groups[0]["lr"]*=0.99
-            train_stats = train_op(self.model, self.train_loader if not loader else loader, self.optimizer, epochs)
-            subtract_(target=self.dW, minuend=self.W, subtrahend=self.W_old)
+        # with self.lock:
+        copy(target=self.W_old, source=self.W)
+#         self.optimizer.param_groups[0]["lr"]*=0.99
+        train_stats = train_op(self.model, self.train_loader if not loader else loader, self.optimizer, epochs)
+        subtract_(target=self.dW, minuend=self.W, subtrahend=self.W_old)
         return train_stats
 
-    def send_dW_to_server(self, server):
-        print("[Client - %s]: send dw to server" % self.id)
-        server.dw_q.put(self.dW)
-
     def reset(self):
+        # with self.lock:
         copy(target=self.W, source=self.W_old)
 
 

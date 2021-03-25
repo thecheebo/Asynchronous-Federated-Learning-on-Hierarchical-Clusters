@@ -3,7 +3,7 @@ import torch
 from torch.utils.data import DataLoader
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering
-from multiprocessing import Process, Pool, get_context, Queue
+#from multiprocessing import Process, Pool, get_context, Queue
 from threading import Thread, Lock
 import time
 import socket
@@ -14,18 +14,20 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 def recv(conn, recv_start_time):
     recv_data = b""
     while True:
+        # print("---------------len = ", len(recv_data))
         try:
             data = conn.recv(1024)
             recv_data += data
 
             if data == b'':
                 recv_data = b""
-                if (time.time() - recv_start_time) > 5:
+                if (time.time() - recv_start_time) > 10:
                     return None, 0
             elif str(data)[-2] == '.':
                 if len(recv_data) > 0:
                     try:
                         recv_data = pickle.loads(recv_data)
+                        # conn.sendall(pickle.dumps("ACK"))
                         # print("recv_data = ", recv_data)
                         return recv_data, 1
                     except BaseException as e:
