@@ -3,6 +3,8 @@ import sys
 import time
 import socket
 import pickle
+import json
+import struct
 from datetime import datetime
 from copy import deepcopy
 from threading import Thread, Lock
@@ -21,151 +23,11 @@ from devices import *
 from data_utils import split_data, CustomSubset
 
 def main(N_CLIENTS):
-    stop_flag = False
-    try:
-        client_datas = prepare_data(N_CLIENTS)
+    client_datas = prepare_data(N_CLIENTS)
 
-        print("--> Creating client threads...")
-        clients = [Client(CF10Net, lambda x : torch.optim.SGD(x, lr=0.001, momentum=0.9), data, id=i) for i, data in enumerate(client_datas)]
-        client_threads = []
-        for i, client in enumerate(clients):
-            # recv thread
-            client_threads.append(Thread(name="clt-recv-%s" % client.id, 
-                                 target = client_recv_loop, 
-                                 args=(client, lambda: stop_flag)))
-            # train thread
-            client_threads.append(Thread(name="clt-trn-%s" % client.id, 
-                                target = client_trn_loop, 
-                                args=(client, lambda: stop_flag)))
-        for thread in client_threads:
-            thread.start()
-
-    except (KeyboardInterrupt, SystemExit):
-        print("Gracefully shutting client down...")
-    finally:
-        for thread in client_threads:
-            thread.join()
-
-
-def client_recv_loop(client, should_stop):
-    HOST = '127.0.0.1'     
-    PORT = 9000 + client.id
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind((HOST, PORT))
-        s.listen()
-        while True:
-            try:
-                print("[Client - %s - recv]: client listening..." % client.id)
-                conn, addr = s.accept()
-                recv_data = []
-                with conn:
-                    print("[Client - %s - recv]: Connected by %s" % (client.id, addr))
-                    while True:
-                        data = conn.recv(1024)
-                        if not data:
-                            break
-                        recv_data.append(data)
-                        if str(data)[-2] == '.':
-                            print("done!!!")
-                            break
-                    conn.sendall(b"ACKACKAACK!!!")
-                recv_data = pickle.loads(b"".join(recv_data))
-                print("[Client - %s - recv]: received '%s' from addr %s" % (client.id, len(recv_data), addr))
-                with client.lock:
-                    copy(target=client.W_new, source=recv_data)
-                  #  client.W_new = recv_data
-                    client.W_new_recv = True
-            except:
-                print("[Client - %s - recv]: error..." % client.id)
-                continue
-
-
-
-#    soc = socket.socket()
-#    soc.bind(('', 9000 + client.id))
-#    soc.listen(5)
-#
-#    while True:
-#        try:
-#            print("[Client - %s - recv]: client listening..." % client.id)
-#            conn, addr = soc.accept()
-#            recv_start_time = time.time()
-#            recv_data, status = recv(conn, recv_start_time)
-#            if status == 0:
-#                conn.close()
-#                print("[Client - %s - recv]: conn.close()" % client.id)
-#            else:
-#                print("[Client - %s - recv]: received '%s' from addr %s" % (client.id, len(recv_data), addr))
-#                try:
-#                    conn.sendall(b'ACKACKACK')
-#                    print("[Client - %s - recv]: Sent ACK to the server" % client.id)
-#                except BaseException as e:
-#                    print("[Client - %s - recv]: Error Sending ACK to the server" % client.id)
-#                client.W_new = recv_data
-#                client.W_new_recv = True
-#        except:
-#            soc.close()
-#            print("[Client - %s - recv]: (Timeout) Socket Closed Because no Connections Received.\n"  % client.id)
-#            break
-
-
-def client_trn_loop(client, should_stop):
-    epoch = 1
-#    soc = socket.socket()
-#    try:
-#        soc.connect(("127.0.0.1", 7007))
-#    except BaseException as e:
-#        print("[Client - %s - trn]: Server not ready yet. Socket Closed.")
-#        soc.close()
-
-    while True:
-        # if should_stop():
-        #     print("stop!")
-        #     break
-
-        print("[Client - %s - trn] epoch = %s - begin" % (client.id, epoch))
-
-        with client.lock:
-            client.sync_model()
-            client.W_new_recv = False
-            print("[Client - %s - trn] epoch = %s - sync done" % (client.id, epoch))
-
-        # train
-        train_stats = client.compute_weight_update(epochs=1)
-        print("[Client - %s - trn] epoch = %s - train done" % (client.id, epoch))
-        client.reset()
-        print("[Client - %s - trn] epoch = %s - reset done" % (client.id, epoch))
-
-        HOST = '127.0.0.1' 
-        PORT = 7007        
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect((HOST, PORT))
-            print("[Client - %s - trn] epoch = %s - connected" % (client.id, epoch))
-            data = pickle.dumps(client.dW)
-            s.sendall(data)
-            print("[Client - %s - trn] epoch = %s - done, sent to server" % (client.id, epoch))
-            data = s.recv(1024)
-            print("[Client - %s - trn] epoch = %s - recv ACK from server" % (client.id, epoch))
-
-#        # send dw to server/leader
-#        if epoch % 1 == 0:
-#            soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-#            try:
-#                data = pickle.dumps(client.dW)
-#                print(client.dW)
-#                soc.connect(("127.0.0.1", 7007))
-##                soc.sendall(data)
-#                soc.sendall(b'asdkjfnajkfnweflelkfnekjlfgelifh23214')
-#                print("[Client - %s - trn] epoch = %s - done, sent to server" % (client.id, epoch))
-#                resp = soc.recv(1024)
-#                print("[Client - %s - trn] epoch = %s - recv response from server" % (client.id, epoch))
-#            except BaseException as e:
-#                print("[Client - %s - trn]: Server not ready yet. Socket Closed.")
-#            soc.close()
-
-        epoch += 1
-
+    print("--> Creating clients...")
+    clients = [Client(CF10Net, lambda x : torch.optim.SGD(x, lr=0.001, momentum=0.9), data, id=i) for i, data in enumerate(client_datas)]
+        
 
 def prepare_data(N_CLIENTS):
     print("--> Preparing and splitting data...")
@@ -191,8 +53,6 @@ def prepare_data(N_CLIENTS):
 
 
 class Client(FederatedTrainingDevice):
-    from threading import Thread, Lock
-
     def __init__(self, model_fn, optimizer_fn, data, id, leader_id=0, batch_size=128, train_frac=0.8):
         super().__init__(model_fn, data)
         self.optimizer = optimizer_fn(self.model.parameters())
@@ -203,13 +63,129 @@ class Client(FederatedTrainingDevice):
         self.id = id
         self.leader_id = leader_id
 
-        self.dW = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
+        # self.dW = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
         self.W_old = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
 
         self.W_new = None
         self.W_new_recv = False
 
         self.lock = Lock()
+
+        ###  Threads  ###
+        try:
+            client_threads = []
+            # recv thread
+ #           client_threads.append(Thread(name="clt-recv-%s" % self.id, target = self.client_recv_loop))
+            # train thread
+            client_threads.append(Thread(name="clt-trn-%s" % self.id, target = self.client_trn_loop))
+
+            for thread in client_threads:
+                thread.start()
+
+        except (KeyboardInterrupt, SystemExit):
+            print("Gracefully shutting client down...")
+        finally:
+            for thread in client_threads:
+                thread.join()
+
+
+    def client_recv_loop(self):
+        HOST = '127.0.0.1'     
+        PORT = 9000 + self.id
+    
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind((HOST, PORT))
+            s.listen()
+            while True:
+                try:
+                    print("[Client - %s - recv]: client listening..." % self.id)
+                    conn, addr = s.accept()
+
+#                    with conn:
+#                        datasize = read_long(conn)
+#                        data = read_blob(conn, datasize)
+#                        jdata = json.load(data.decode('utf-8'))
+#                        print("[Client - %s - recv]: received '%s' from addr %s" % (self.id, len(jdata), addr))
+#                        conn.sendall(b"ACKACKAACK!!!")
+
+
+                    recv_data = []
+                    with conn:
+                        print("[Client - %s - recv]: Connected by %s" % (self.id, addr))
+                        data = conn.recv(1024)
+                        size = pickle.loads(data)
+                        print("<------- len = ", size)
+                        conn.sendall(b"start!!!")
+                        while True:
+                            data = conn.recv(1024)
+                            if not data:
+                                break
+                            recv_data.append(data)
+                            size -= len(data)
+                            # if str(data)[-2] == '.':
+                            if size == 0:
+                                print("done!!!")
+                                break
+                        conn.sendall(b"ACKACKAACK!!!")
+                    recv_byte = b"".join(recv_data)
+                    print(len(recv_byte))
+                    recv_data = pickle.loads(recv_byte)
+#c                   print(333)
+                    print("[Client - %s - recv]: received '%s' from addr %s" % (self.id, len(recv_data), addr))
+#                    with self.lock:
+#                        print(1)
+#                        copy(target=self.W_new, source=recv_data)
+#                        print(2)
+#                        # self.W_new = recv_data
+#                        self.W_new_recv = True
+#                        print(3)
+                except:
+                    print("[Client - %s - recv]: error..." % self.id)
+                    continue
+    
+
+    def client_trn_loop(self):
+        epoch = 1
+        while True:
+            try:
+                print("[Client - %s - trn] epoch = %s - begin" % (self.id, epoch))
+    
+                # with self.lock:
+                #     self.sync_model()
+                #     self.W_new_recv = False
+                #     print("[Client - %s - trn] epoch = %s - sync done" % (self.id, epoch))
+    
+                # train
+                train_stats = self.compute_weight_update(epochs=1)
+                print("[Client - %s - trn] epoch = %s - train done" % (self.id, epoch))
+                self.reset()
+                print("[Client - %s - trn] epoch = %s - reset done" % (self.id, epoch))
+    
+                HOST = '127.0.0.1' 
+                PORT = 7007        
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.connect((HOST, PORT))
+                    print("[Client - %s - trn] epoch = %s - connected" % (self.id, epoch))
+#                    print(self.dW)
+                    data = pickle.dumps(self.W)
+                    f = open("./b.txt", "w")
+                    f.write(str(data))
+                    f.close()
+                    print("----->", len(data))
+                    s.send(pickle.dumps(len(data)))
+                    st = s.recv(1024)
+                    print("recv starrttttttttttt")
+                    #data = b"hello world"
+                    s.sendall(data)
+                    print("[Client - %s - trn] epoch = %s - done, sent to server" % (self.id, epoch))
+                    data = s.recv(1024)
+                    print("[Client - %s - trn] epoch = %s - recv ACK from server" % (self.id, epoch))
+            except:
+                print("[Client - %s - trn] epoch = %s - error.." % (self.id, epoch))
+            epoch += 1
+#            time.sleep(10)
+
+
 
     def sync_model(self):
         if (self.W_new_recv):
@@ -228,6 +204,7 @@ class Client(FederatedTrainingDevice):
     def reset(self):
         # with self.lock:
         copy(target=self.W, source=self.W_old)
+
 
 
 if __name__ == "__main__":

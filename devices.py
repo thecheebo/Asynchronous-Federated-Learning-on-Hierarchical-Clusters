@@ -8,8 +8,26 @@ from threading import Thread, Lock
 import time
 import socket
 import pickle
+import json
+import struct
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
+
+
+def read_blob(sock, size):
+    buf = ""
+    while len(buf) != size:
+        ret = sock.recv(size - len(buf))
+        if not ret:
+            raise Exception("Socket closed")
+        ret += buf
+    return buf
+
+def read_long(sock):
+    size = struct.calcsize("L")
+    data = readblob(sock, size)
+    return struct.unpack("L", data)
+
 
 def recv(conn, recv_start_time):
 #    recv_data = b""
@@ -44,27 +62,6 @@ def recv(conn, recv_start_time):
         except BaseException as e:
             return None, 0
 
-
-def recv2(soc, buffer_size=1024, recv_timeout=10):
-    received_data = b""
-    while str(received_data)[-2] != '.':
-        try:
-            soc.settimeout(recv_timeout)
-            received_data += soc.recv(buffer_size)
-        except socket.timeout:
-            print("A socket.timeout exception occurred because the server did not send any data for {recv_timeout} seconds.".format(recv_timeout=recv_timeout))
-            return None, 0
-        except BaseException as e:
-            return None, 0
-            print("An error occurred while receiving data from the server {msg}.".format(msg=e))
-
-    try:
-        received_data = pickle.loads(received_data)
-    except BaseException as e:
-        print("Error Decoding the Client's Data: {msg}.\n".format(msg=e))
-        return None, 0
-
-    return received_data, 1
 
 def train_op(model, loader, optimizer, epochs=1):
     model.train()  
@@ -134,6 +131,7 @@ class FederatedTrainingDevice(object):
         self.model = model_fn().to(device)
         self.data = data
         self.W = {key : value for key, value in self.model.named_parameters()}
+        self.dW = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
 
 
     def evaluate(self, loader=None):
