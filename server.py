@@ -39,10 +39,10 @@ def main(N_CLIENTS):
         server_threads.append(Thread(name="server_upd_eval", 
                                target=server_upd_eval_loop, 
                                args=(server, lambda: stop_flag)))
-#        # send thread
-#        server_threads.append(Thread(name="server_send",
-#                               target=server_send_loop,
-#                               args=(server, lambda: stop_flag)))
+        # send thread
+        server_threads.append(Thread(name="server_send",
+                               target=server_send_loop,
+                               args=(server, lambda: stop_flag)))
         for thread in server_threads:
             thread.start()
     except (KeyboardInterrupt, SystemExit):
@@ -54,38 +54,38 @@ def main(N_CLIENTS):
         server.dw_q.join()
 
 
+
 def server_recv_loop(server, should_stop):
-    HOST = '127.0.0.1'  # 标准的回环地址 (localhost)
-    PORT = 7007        # 监听的端口 (非系统级的端口: 大于 1023)
+    HOST = '127.0.0.1' 
+    PORT = 7007        
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((HOST, PORT))
         s.listen()
         while True:
-            print("[Server - recv]: listening...")
-            conn, addr = s.accept()
-            recv_data = b""
-            with conn:
-                print('Connected by', addr)
-                while True:
-                    data = conn.recv(1024)
-                    if not data:
-                        break
-                    recv_data += data
-                #    print("================")
-                #    print(data)
-                    if str(data)[-2] == '.':
-                        print("done!!!")
-                        break
-                #print("sendind ACKACKAACK")
-                conn.sendall(b"ACKACKAACK!!!")
-            print("-------------------->")
-#            print(recv_data)
-            print("<--------------------")
-            recv_data = pickle.loads(recv_data)
-            print(recv_data["conv1.weight"])
-            server.dw_q.put(recv_data)
-            print("[Server - recv]: putted in queue")
+            try:
+                print("[Server - recv]: listening...")
+                conn, addr = s.accept()
+                recv_data = []
+                with conn:
+                    print('[Server - recv]: Connected by', addr)
+                    while True:
+                        data = conn.recv(1024)
+                        if not data:
+                            break
+                        recv_data.append(data)
+                        if str(data)[-2] == '.':
+                            print("done!!!")
+                            break
+                    conn.sendall(b"ACKACKAACK!!!")
+                recv_data = pickle.loads(b"".join(recv_data))
+                print("[Server - recv]: received from addr %s" % (len(recv_data), addr))
+           #     print(recv_data["conv1.weight"][:50])
+                server.dw_q.put(recv_data)
+                print("[Server - recv]: putted in queue")
+            except:
+                print("[Server - recv]: error...")
+                continue
 
 
 
@@ -148,27 +148,50 @@ def server_upd_eval_loop(server, should_stop):
 def server_send_loop(server, should_stop):
     rd = 1
     while True:
-        for client in server.client_list:
-            soc = socket.socket()
+        for client_addr in server.client_list:
             try:
-                soc.connect(client)
-                data = pickle.dumps(server.W)
-                soc.sendall(data)
-                print("[Server - send]: rd = %s, server send to client %s" % (rd, client)) 
-                resp = soc.recv(1024)
-                print("[Server - send]: rd = %s - recv response from client %s" % (rd, client))
-                # recv_data, status = recv2(soc=soc, buffer_size=1024, recv_timeout=10)
-                # if status == 0:
-                #     print("[Server - send]: rd = %s - Nothing Received from the client %s" % (rd, client))
-                #     break
-                # else:
-                #     print("[Server - send]: rd = %s - recv response from client %s" % (rd, client))
-                soc.close()
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.connect(client_addr)
+                    data = pickle.dumps(server.W)
+                    s.sendall(data)
+                    print("[Server - send]: rd = %s, server send to client %s" % (rd, client_addr))
+                    data = s.recv(1024)
+                    if data:
+                        print("[Server - send]: rd = %s - recv ACK from client %s" % (rd, client_addr))
+                    else:
+                        print("[Server - send]: rd = %s - recv 00000 from client %s" % (rd, client_addr))
             except:
-                print("[Server - send]: client not up")
-                soc.close()
-        time.sleep(20)
+                print("[Server - send]: rd = %s - error send model to client %s" % (rd, client_addr))
+                continue
+        time.sleep(10)
         rd += 1
+
+
+
+
+#    rd = 1
+#    while True:
+#        for client in server.client_list:
+#            soc = socket.socket()
+#            try:
+#                soc.connect(client)
+#                data = pickle.dumps(server.W)
+#                soc.sendall(data)
+#                print("[Server - send]: rd = %s, server send to client %s" % (rd, client)) 
+#                resp = soc.recv(1024)
+#                print("[Server - send]: rd = %s - recv response from client %s" % (rd, client))
+#                # recv_data, status = recv2(soc=soc, buffer_size=1024, recv_timeout=10)
+#                # if status == 0:
+#                #     print("[Server - send]: rd = %s - Nothing Received from the client %s" % (rd, client))
+#                #     break
+#                # else:
+#                #     print("[Server - send]: rd = %s - recv response from client %s" % (rd, client))
+#                soc.close()
+#            except:
+#                print("[Server - send]: client not up")
+#                soc.close()
+#        time.sleep(20)
+#        rd += 1
 
 
 

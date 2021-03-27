@@ -29,10 +29,10 @@ def main(N_CLIENTS):
         clients = [Client(CF10Net, lambda x : torch.optim.SGD(x, lr=0.001, momentum=0.9), data, id=i) for i, data in enumerate(client_datas)]
         client_threads = []
         for i, client in enumerate(clients):
-#            # recv thread
-#            client_threads.append(Thread(name="clt-recv-%s" % client.id, 
-#                                 target = client_recv_loop, 
-#                                 args=(client, lambda: stop_flag)))
+            # recv thread
+            client_threads.append(Thread(name="clt-recv-%s" % client.id, 
+                                 target = client_recv_loop, 
+                                 args=(client, lambda: stop_flag)))
             # train thread
             client_threads.append(Thread(name="clt-trn-%s" % client.id, 
                                 target = client_trn_loop, 
@@ -48,32 +48,66 @@ def main(N_CLIENTS):
 
 
 def client_recv_loop(client, should_stop):
-    soc = socket.socket()
-    soc.bind(('', 9000 + client.id))
-    soc.listen(5)
+    HOST = '127.0.0.1'     
+    PORT = 9000 + client.id
 
-    while True:
-        try:
-            print("[Client - %s - recv]: client listening..." % client.id)
-            conn, addr = soc.accept()
-            recv_start_time = time.time()
-            recv_data, status = recv(conn, recv_start_time)
-            if status == 0:
-                conn.close()
-                print("[Client - %s - recv]: conn.close()" % client.id)
-            else:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind((HOST, PORT))
+        s.listen()
+        while True:
+            try:
+                print("[Client - %s - recv]: client listening..." % client.id)
+                conn, addr = s.accept()
+                recv_data = []
+                with conn:
+                    print("[Client - %s - recv]: Connected by %s" % (client.id, addr))
+                    while True:
+                        data = conn.recv(1024)
+                        if not data:
+                            break
+                        recv_data.append(data)
+                        if str(data)[-2] == '.':
+                            print("done!!!")
+                            break
+                    conn.sendall(b"ACKACKAACK!!!")
+                recv_data = pickle.loads(b"".join(recv_data))
                 print("[Client - %s - recv]: received '%s' from addr %s" % (client.id, len(recv_data), addr))
-                try:
-                    conn.sendall(b'ACKACKACK')
-                    print("[Client - %s - recv]: Sent ACK to the server" % client.id)
-                except BaseException as e:
-                    print("[Client - %s - recv]: Error Sending ACK to the server" % client.id)
-                client.W_new = recv_data
-                client.W_new_recv = True
-        except:
-            soc.close()
-            print("[Client - %s - recv]: (Timeout) Socket Closed Because no Connections Received.\n"  % client.id)
-            break
+                with client.lock:
+                    copy(target=client.W_new, source=recv_data)
+                  #  client.W_new = recv_data
+                    client.W_new_recv = True
+            except:
+                print("[Client - %s - recv]: error..." % client.id)
+                continue
+
+
+
+#    soc = socket.socket()
+#    soc.bind(('', 9000 + client.id))
+#    soc.listen(5)
+#
+#    while True:
+#        try:
+#            print("[Client - %s - recv]: client listening..." % client.id)
+#            conn, addr = soc.accept()
+#            recv_start_time = time.time()
+#            recv_data, status = recv(conn, recv_start_time)
+#            if status == 0:
+#                conn.close()
+#                print("[Client - %s - recv]: conn.close()" % client.id)
+#            else:
+#                print("[Client - %s - recv]: received '%s' from addr %s" % (client.id, len(recv_data), addr))
+#                try:
+#                    conn.sendall(b'ACKACKACK')
+#                    print("[Client - %s - recv]: Sent ACK to the server" % client.id)
+#                except BaseException as e:
+#                    print("[Client - %s - recv]: Error Sending ACK to the server" % client.id)
+#                client.W_new = recv_data
+#                client.W_new_recv = True
+#        except:
+#            soc.close()
+#            print("[Client - %s - recv]: (Timeout) Socket Closed Because no Connections Received.\n"  % client.id)
+#            break
 
 
 def client_trn_loop(client, should_stop):
@@ -92,9 +126,10 @@ def client_trn_loop(client, should_stop):
 
         print("[Client - %s - trn] epoch = %s - begin" % (client.id, epoch))
 
-        client.sync_model()
-        client.W_new_recv = False
-        print("[Client - %s - trn] epoch = %s - sync done" % (client.id, epoch))
+        with client.lock:
+            client.sync_model()
+            client.W_new_recv = False
+            print("[Client - %s - trn] epoch = %s - sync done" % (client.id, epoch))
 
         # train
         train_stats = client.compute_weight_update(epochs=1)
@@ -102,8 +137,8 @@ def client_trn_loop(client, should_stop):
         client.reset()
         print("[Client - %s - trn] epoch = %s - reset done" % (client.id, epoch))
 
-        HOST = '127.0.0.1'  # 服务器的主机名或者 IP 地址
-        PORT = 7007        # 服务器使用的端口
+        HOST = '127.0.0.1' 
+        PORT = 7007        
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((HOST, PORT))
             print("[Client - %s - trn] epoch = %s - connected" % (client.id, epoch))
@@ -156,6 +191,8 @@ def prepare_data(N_CLIENTS):
 
 
 class Client(FederatedTrainingDevice):
+    from threading import Thread, Lock
+
     def __init__(self, model_fn, optimizer_fn, data, id, leader_id=0, batch_size=128, train_frac=0.8):
         super().__init__(model_fn, data)
         self.optimizer = optimizer_fn(self.model.parameters())
