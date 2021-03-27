@@ -29,10 +29,10 @@ def main(N_CLIENTS):
         clients = [Client(CF10Net, lambda x : torch.optim.SGD(x, lr=0.001, momentum=0.9), data, id=i) for i, data in enumerate(client_datas)]
         client_threads = []
         for i, client in enumerate(clients):
-            # recv thread
-            client_threads.append(Thread(name="clt-recv-%s" % client.id, 
-                                 target = client_recv_loop, 
-                                 args=(client, lambda: stop_flag)))
+#            # recv thread
+#            client_threads.append(Thread(name="clt-recv-%s" % client.id, 
+#                                 target = client_recv_loop, 
+#                                 args=(client, lambda: stop_flag)))
             # train thread
             client_threads.append(Thread(name="clt-trn-%s" % client.id, 
                                 target = client_trn_loop, 
@@ -49,21 +49,25 @@ def main(N_CLIENTS):
 
 def client_recv_loop(client, should_stop):
     soc = socket.socket()
-    soc.bind(('', 90 + client.id))
+    soc.bind(('', 9000 + client.id))
     soc.listen(5)
 
     while True:
         try:
             print("[Client - %s - recv]: client listening..." % client.id)
             conn, addr = soc.accept()
-            with conn:
-                recv_start_time = time.time()
-                recv_data, status = recv(conn, recv_start_time)
+            recv_start_time = time.time()
+            recv_data, status = recv(conn, recv_start_time)
             if status == 0:
                 conn.close()
                 print("[Client - %s - recv]: conn.close()" % client.id)
             else:
                 print("[Client - %s - recv]: received '%s' from addr %s" % (client.id, len(recv_data), addr))
+                try:
+                    conn.sendall(b'ACKACKACK')
+                    print("[Client - %s - recv]: Sent ACK to the server" % client.id)
+                except BaseException as e:
+                    print("[Client - %s - recv]: Error Sending ACK to the server" % client.id)
                 client.W_new = recv_data
                 client.W_new_recv = True
         except:
@@ -74,12 +78,12 @@ def client_recv_loop(client, should_stop):
 
 def client_trn_loop(client, should_stop):
     epoch = 1
-    soc = socket.socket()
-    try:
-        soc.connect(("127.0.0.1", 70))
-    except BaseException as e:
-        print("[Client - %s - trn]: Server not ready yet. Socket Closed.")
-        soc.close()
+#    soc = socket.socket()
+#    try:
+#        soc.connect(("127.0.0.1", 7007))
+#    except BaseException as e:
+#        print("[Client - %s - trn]: Server not ready yet. Socket Closed.")
+#        soc.close()
 
     while True:
         # if should_stop():
@@ -98,11 +102,32 @@ def client_trn_loop(client, should_stop):
         client.reset()
         print("[Client - %s - trn] epoch = %s - reset done" % (client.id, epoch))
 
-        # send dw to server/leader
-        if epoch % 2 == 0:
+        HOST = '127.0.0.1'  # 服务器的主机名或者 IP 地址
+        PORT = 7007        # 服务器使用的端口
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((HOST, PORT))
+            print("[Client - %s - trn] epoch = %s - connected" % (client.id, epoch))
             data = pickle.dumps(client.dW)
-            soc.sendall(data)
+            s.sendall(data)
             print("[Client - %s - trn] epoch = %s - done, sent to server" % (client.id, epoch))
+            data = s.recv(1024)
+            print("[Client - %s - trn] epoch = %s - recv ACK from server" % (client.id, epoch))
+
+#        # send dw to server/leader
+#        if epoch % 1 == 0:
+#            soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#            try:
+#                data = pickle.dumps(client.dW)
+#                print(client.dW)
+#                soc.connect(("127.0.0.1", 7007))
+##                soc.sendall(data)
+#                soc.sendall(b'asdkjfnajkfnweflelkfnekjlfgelifh23214')
+#                print("[Client - %s - trn] epoch = %s - done, sent to server" % (client.id, epoch))
+#                resp = soc.recv(1024)
+#                print("[Client - %s - trn] epoch = %s - recv response from server" % (client.id, epoch))
+#            except BaseException as e:
+#                print("[Client - %s - trn]: Server not ready yet. Socket Closed.")
+#            soc.close()
 
         epoch += 1
 

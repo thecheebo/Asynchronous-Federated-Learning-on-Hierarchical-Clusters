@@ -12,21 +12,28 @@ import pickle
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 def recv(conn, recv_start_time):
-    recv_data = b""
+#    recv_data = b""
+    recv_data = []
     while True:
-        # print("---------------len = ", len(recv_data))
+#        print("len = ", len(recv_data))
         try:
+#            print(-1)
             data = conn.recv(1024)
-            recv_data += data
+#            print(0)
+#            recv_data += data
+            recv_data.append(data)
+#            print(1)
 
             if data == b'':
-                recv_data = b""
-                if (time.time() - recv_start_time) > 10:
+#                recv_data = b""
+                recv_data = []
+                if (time.time() - recv_start_time) > 100:
                     return None, 0
             elif str(data)[-2] == '.':
                 if len(recv_data) > 0:
                     try:
-                        recv_data = pickle.loads(recv_data)
+#                        recv_data = pickle.loads(recv_data)
+                        recv_data = pickle.loads(b''.join(recv_data))
                         # conn.sendall(pickle.dumps("ACK"))
                         # print("recv_data = ", recv_data)
                         return recv_data, 1
@@ -37,6 +44,27 @@ def recv(conn, recv_start_time):
         except BaseException as e:
             return None, 0
 
+
+def recv2(soc, buffer_size=1024, recv_timeout=10):
+    received_data = b""
+    while str(received_data)[-2] != '.':
+        try:
+            soc.settimeout(recv_timeout)
+            received_data += soc.recv(buffer_size)
+        except socket.timeout:
+            print("A socket.timeout exception occurred because the server did not send any data for {recv_timeout} seconds.".format(recv_timeout=recv_timeout))
+            return None, 0
+        except BaseException as e:
+            return None, 0
+            print("An error occurred while receiving data from the server {msg}.".format(msg=e))
+
+    try:
+        received_data = pickle.loads(received_data)
+    except BaseException as e:
+        print("Error Decoding the Client's Data: {msg}.\n".format(msg=e))
+        return None, 0
+
+    return received_data, 1
 
 def train_op(model, loader, optimizer, epochs=1):
     model.train()  
