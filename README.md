@@ -3,12 +3,12 @@
 # federated-learning project
 
 run:
-	python server.py 1
+	python server.py 1;         
 	python client.py 1
 
 files:
-	server.py
-	client.py
+	server.py, 
+	client.py, 
 	devices.py
 
 links:
