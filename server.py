@@ -25,190 +25,12 @@ from data_utils import split_data, CustomSubset
 def main(N_CLIENTS):
     test_data, testloader = prepare_data()
 
-    try:
-        ### Server process ###
-        print("--> Creating server threads...")
-        server = Server(CF10Net, test_data, testloader)
-        for i in range(N_CLIENTS):
-            server.client_list.append(('127.0.0.1', 9000 + i))
-        server_threads = []
-        # recv thread
-        server_threads.append(Thread(name="server_recv", 
-                                    target=server_recv_loop, 
-                                    args=(server, lambda: stop_flag)))
-#        # update & eval thread
-#        server_threads.append(Thread(name="server_upd_eval", 
-#                               target=server_upd_eval_loop, 
-#                               args=(server, lambda: stop_flag)))
-        # send thread
-#        server_threads.append(Thread(name="server_send",
-#                               target=server_send_loop,
-#                               args=(server, lambda: stop_flag)))
-        for thread in server_threads:
-            thread.start()
-    except (KeyboardInterrupt, SystemExit):
-        print("Gracefully shutting server down...")
-    finally:
-        stop_flag = True
-        for thread in server_threads:
-            thread.join()
-        server.dw_q.join()
-
-
-
-def server_recv_loop(server, should_stop):
-    HOST = '127.0.0.1' 
-    PORT = 7007        
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind((HOST, PORT))
-        s.listen()
-        while True:
-            try:
-                print("[Server - recv]: listening...")
-                conn, addr = s.accept()
-                recv_data = []
-                with conn:
-                    print('[Server - recv]: Connected by', addr)
-                    data = conn.recv(1024)
-                    size = pickle.loads(data)
-                    print("<------- len = ", size)
-                    conn.sendall(b"start!!!")
-                    while True:
-                        data = conn.recv(1024)
-                        if not data:
-                            break
-                        recv_data.append(data)
-                        size -= len(data)
-                        # if str(data)[-2] == '.':
-                        if size == 0:
-                            print("done!!!")
-                            break
-                    conn.sendall(b"ACKACKAACK!!!")
-                recv_byte = b"".join(recv_data)
-                print(len(recv_byte))
-                recv_d = pickle.loads(recv_byte)
-           #     print("[Server - recv]: received from addr %s" % (len(recv_d), addr))
-           #     print(recv_data["conv1.weight"][:50])
-                # server.dw_q.put(recv_data)
-                print("[Server - recv]: putted in queue")
-            except:
-                print("[Server - recv]: error...")
-                continue
-
-
-
-
-#    soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-#    soc.bind(('', 7007))
-#    soc.listen(1)
-#
-#    while True:
-#        try:
-#            print("[Server - recv]: listening...")
-#            conn, addr = soc.accept()
-#            recv_start_time = time.time()
-#            recv_data, status = recv(conn, recv_start_time)
-#            if status == 0:
-#                soc.close()
-#                print("[Server - recv]: conn.close()...")
-#            else:
-#                print("[Server - recv]: received from addr %s" % (len(recv_data), addr))
-#                try:
-#                    conn.sendall(b'ACKACKACK')
-#                except BaseException as e:
-#                    print("ero")
-#        except:
-#            soc.close()
-#            print("timeout")
-#            break
-
-#    i = 1
-#    while True:
-#        try:
-#            print("[Server - recv]: listening...", i)
-#            conn, addr = soc.accept()
-#            print("[Server - recv]: accepted", i)
-##            with conn:
-#            soc_thread = SocketThread(server = server, conn=conn, client_addr=addr)
-#            print("[Server - recv]: created", i)
-#            soc_thread.start()
-#            print("[Server - recv]: done", i)
-#        except:
-#            soc.close()
-#            print("[Server - recv]: (Timeout) Socket Closed Because no Connections Received.\n")
-#            break
-##        finally:
-##            print("finally")
-##            soc_thread.join()
-#        i += 1
-
-
-def server_upd_eval_loop(server, should_stop):
-    global acc_server
-    rd = 1
-    while True:
-        if rd == 1 or server.update_model():
-            acc_server = [server.evaluate()]
-            print("[Server - upd] rd = %s, acc = %s" % (rd, acc_server))
-            rd += 1
-
-
-def server_send_loop(server, should_stop):
-    rd = 1
-    while True:
-        for client_addr in server.client_list:
-            try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.connect(client_addr)
-                    data = pickle.dumps(server.W)
-                    print("----->", len(data))
-                    s.send(pickle.dumps(len(data)))
-                    st = s.recv(1024)
-                    print("[Server - send]: rd = %s - recv starttttt from client %s" % (rd, client_addr))
-                    s.sendall(data)
-                    print("[Server - send]: rd = %s, server send to client %s" % (rd, client_addr))
-                    data = s.recv(1024)
-                    if data:
-                        print("[Server - send]: rd = %s - recv ACK from client %s" % (rd, client_addr))
-                    else:
-                        print("[Server - send]: rd = %s - recv 00000 from client %s" % (rd, client_addr))
-            except:
-                print("[Server - send]: rd = %s - error send model to client %s" % (rd, client_addr))
-                continue
-        time.sleep(10)
-        rd += 1
-
-
-
-
-#    rd = 1
-#    while True:
-#        for client in server.client_list:
-#            soc = socket.socket()
-#            try:
-#                soc.connect(client)
-#                data = pickle.dumps(server.W)
-#                soc.sendall(data)
-#                print("[Server - send]: rd = %s, server send to client %s" % (rd, client)) 
-#                resp = soc.recv(1024)
-#                print("[Server - send]: rd = %s - recv response from client %s" % (rd, client))
-#                # recv_data, status = recv2(soc=soc, buffer_size=1024, recv_timeout=10)
-#                # if status == 0:
-#                #     print("[Server - send]: rd = %s - Nothing Received from the client %s" % (rd, client))
-#                #     break
-#                # else:
-#                #     print("[Server - send]: rd = %s - recv response from client %s" % (rd, client))
-#                soc.close()
-#            except:
-#                print("[Server - send]: client not up")
-#                soc.close()
-#        time.sleep(20)
-#        rd += 1
-
+    print("--> Creating server...")
+    server = Server(CF10Net, test_data, testloader)
 
 
 def prepare_data():
+    print("--> Preparing data...")
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
     testset = torchvision.datasets.CIFAR10(root='~/data', train=False, download=False, transform=transform)
@@ -224,11 +46,103 @@ class Server(FederatedTrainingDevice):
     def __init__(self, model_fn, data, testloader):
         super().__init__(model_fn, data)
         self.testloader = testloader
-        # self.ctx = get_context("spawn")
-        # self.dw_q = self.ctx.Queue()
         self.dw_q = Queue(maxsize=20)
         self.lock = Lock()
         self.client_list = []
+        for i in range(N_CLIENTS):
+            self.client_list.append(('127.0.0.1', 9000 + i))
+
+        try:
+            server_threads = []
+            # recv thread
+            server_threads.append(Thread(name="server_recv", target=self.server_recv_loop))
+            # update & eval thread
+            server_threads.append(Thread(name="server_upd_eval", target=self.server_upd_eval_loop))
+            # send thread
+            server_threads.append(Thread(name="server_send", target=self.server_send_loop))
+
+            for thread in server_threads:
+                thread.start()
+        except (KeyboardInterrupt, SystemExit):
+            print("Gracefully shutting server down...")
+
+
+    def server_recv_loop(self):
+        HOST = '127.0.0.1' 
+        PORT = 7007        
+    
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind((HOST, PORT))
+            s.listen()
+            while True:
+                try:
+                    print("[Server - recv]: listening...")
+                    conn, addr = s.accept()
+                    recv_data = []
+                    with conn:
+                        print('[Server - recv]: Connected by', addr)
+                        data = conn.recv(1024)
+                        size = pickle.loads(data)
+#                        print("<------- len = ", size)
+                        conn.sendall(b"start!!!")
+                        while True:
+                            data = conn.recv(1024)
+                            if not data:
+                                break
+                            recv_data.append(data)
+                            size -= len(data)
+                            # if str(data)[-2] == '.':
+                            if size == 0:
+                                print("done!!!")
+                                break
+                        conn.sendall(b"ACKACKAACK!!!")
+                    recv_byte = b"".join(recv_data)
+                    print("<------- ", len(recv_byte))
+                    recv_data = pickle.loads(recv_byte)
+                    print("[Server - recv]: received %s from addr %s" % (len(recv_data), addr))
+               #     print(recv_data["conv1.weight"][:50])
+                    self.dw_q.put(recv_data)
+                    print("[Server - recv]: putted in queue")
+                except:
+                    print("[Server - recv]: error...")
+                    continue
+    
+    
+    def server_upd_eval_loop(self):
+        global acc_server
+        rd = 1
+        while True:
+            if rd == 1 or self.update_model():
+                acc_server = [self.evaluate()]
+                print("[Server - upd] rd = %s, acc = %s" % (rd, acc_server))
+                rd += 1
+    
+    
+    def server_send_loop(self):
+        rd = 1
+        while True:
+            for client_addr in self.client_list:
+                try:
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                        s.connect(client_addr)
+                        data = pickle.dumps(self.W)
+                        print("----->", len(data))
+                        s.send(pickle.dumps(len(data)))
+                        st = s.recv(1024)
+                        print("[Server - send]: rd = %s - recv starttttt from client %s" % (rd, client_addr))
+                        s.sendall(data)
+                        print("[Server - send]: rd = %s, server send to client %s" % (rd, client_addr))
+                        data = s.recv(1024)
+                        if data:
+                            print("[Server - send]: rd = %s - recv ACK from client %s" % (rd, client_addr))
+                        else:
+                            print("[Server - send]: rd = %s - recv 00000 from client %s" % (rd, client_addr))
+                except:
+                    print("[Server - send]: rd = %s - error send model to client %s" % (rd, client_addr))
+                    continue
+            time.sleep(10)
+            rd += 1
+
 
     def select_clients(self, clients, frac=1.0):
         return random.sample(clients, int(len(clients)*frac))
@@ -311,7 +225,7 @@ class Server(FederatedTrainingDevice):
 #        except BaseException as e:
 #            print("[Server - recv]: Error Sending ACK to client")
 #
-#        self.server.dw_q.put(recv_data)
+#        self.self.dw_q.put(recv_data)
 #        print("[Server - recv]: putted in queue")
 #        self.conn.close()
 

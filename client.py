@@ -25,8 +25,10 @@ from data_utils import split_data, CustomSubset
 def main(N_CLIENTS):
     client_datas = prepare_data(N_CLIENTS)
 
-    print("--> Creating clients...")
-    clients = [Client(CF10Net, lambda x : torch.optim.SGD(x, lr=0.001, momentum=0.9), data, id=i) for i, data in enumerate(client_datas)]
+    print("--> Creating clients...", len(client_datas))
+    for i, data in enumerate(client_datas):
+        print("---->", i)
+        client = Client(CF10Net, lambda x : torch.optim.SGD(x, lr=0.001, momentum=0.9), data, id=i)
         
 
 def prepare_data(N_CLIENTS):
@@ -63,7 +65,7 @@ class Client(FederatedTrainingDevice):
         self.id = id
         self.leader_id = leader_id
 
-        # self.dW = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
+        self.dW = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
         self.W_old = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
 
         self.W_new = None
@@ -75,18 +77,17 @@ class Client(FederatedTrainingDevice):
         try:
             client_threads = []
             # recv thread
- #           client_threads.append(Thread(name="clt-recv-%s" % self.id, target = self.client_recv_loop))
+            client_threads.append(Thread(name="clt-recv-%s" % self.id, target = self.client_recv_loop))
             # train thread
             client_threads.append(Thread(name="clt-trn-%s" % self.id, target = self.client_trn_loop))
 
             for thread in client_threads:
                 thread.start()
-
         except (KeyboardInterrupt, SystemExit):
             print("Gracefully shutting client down...")
-        finally:
-            for thread in client_threads:
-                thread.join()
+#        finally:
+#            for thread in client_threads:
+#                thread.join()
 
 
     def client_recv_loop(self):
@@ -100,14 +101,6 @@ class Client(FederatedTrainingDevice):
                 try:
                     print("[Client - %s - recv]: client listening..." % self.id)
                     conn, addr = s.accept()
-
-#                    with conn:
-#                        datasize = read_long(conn)
-#                        data = read_blob(conn, datasize)
-#                        jdata = json.load(data.decode('utf-8'))
-#                        print("[Client - %s - recv]: received '%s' from addr %s" % (self.id, len(jdata), addr))
-#                        conn.sendall(b"ACKACKAACK!!!")
-
 
                     recv_data = []
                     with conn:
@@ -128,7 +121,7 @@ class Client(FederatedTrainingDevice):
                                 break
                         conn.sendall(b"ACKACKAACK!!!")
                     recv_byte = b"".join(recv_data)
-                    print(len(recv_byte))
+                    print("<------- ", len(recv_byte))
                     recv_data = pickle.loads(recv_byte)
 #c                   print(333)
                     print("[Client - %s - recv]: received '%s' from addr %s" % (self.id, len(recv_data), addr))
@@ -168,14 +161,10 @@ class Client(FederatedTrainingDevice):
                     print("[Client - %s - trn] epoch = %s - connected" % (self.id, epoch))
 #                    print(self.dW)
                     data = pickle.dumps(self.W)
-                    f = open("./b.txt", "w")
-                    f.write(str(data))
-                    f.close()
                     print("----->", len(data))
                     s.send(pickle.dumps(len(data)))
                     st = s.recv(1024)
                     print("recv starrttttttttttt")
-                    #data = b"hello world"
                     s.sendall(data)
                     print("[Client - %s - trn] epoch = %s - done, sent to server" % (self.id, epoch))
                     data = s.recv(1024)

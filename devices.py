@@ -131,7 +131,6 @@ class FederatedTrainingDevice(object):
         self.model = model_fn().to(device)
         self.data = data
         self.W = {key : value for key, value in self.model.named_parameters()}
-        self.dW = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
 
 
     def evaluate(self, loader=None):
