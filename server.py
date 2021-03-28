@@ -38,6 +38,7 @@ def prepare_data():
     testloader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False, num_workers=0)
 
     test_idcs = np.random.permutation(len(testset))
+    print(len(test_idcs))
 
     return CustomSubset(testset, test_idcs, transforms.Compose([transforms.ToTensor()])), testloader
 
@@ -91,7 +92,6 @@ class Server(FederatedTrainingDevice):
                                 break
                             recv_data.append(data)
                             size -= len(data)
-                            # if str(data)[-2] == '.':
                             if size == 0:
                                 print("done!!!")
                                 break
@@ -115,41 +115,46 @@ class Server(FederatedTrainingDevice):
             if rd == 1 or self.update_model():
                 acc_server = [self.evaluate()]
                 print("[Server - upd] rd = %s, acc = %s" % (rd, acc_server))
+#                self.send_model(rd)
                 rd += 1
+            time.sleep(5)
     
     
     def server_send_loop(self):
         rd = 1
         while True:
-            for client_addr in self.client_list:
-                try:
-                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                        s.connect(client_addr)
-                        data = pickle.dumps(self.W)
-                        print("----->", len(data))
-                        s.send(pickle.dumps(len(data)))
-                        st = s.recv(1024)
-                        print("[Server - send]: rd = %s - recv starttttt from client %s" % (rd, client_addr))
-                        s.sendall(data)
-                        print("[Server - send]: rd = %s, server send to client %s" % (rd, client_addr))
-                        data = s.recv(1024)
-                        if data:
-                            print("[Server - send]: rd = %s - recv ACK from client %s" % (rd, client_addr))
-                        else:
-                            print("[Server - send]: rd = %s - recv 00000 from client %s" % (rd, client_addr))
-                except:
-                    print("[Server - send]: rd = %s - error send model to client %s" % (rd, client_addr))
-                    continue
-            time.sleep(10)
+            self.send_model(rd)
+            time.sleep(5)
             rd += 1
 
+
+    def send_model(self, rd):
+        for client_addr in self.client_list:
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.connect(client_addr)
+                    data = pickle.dumps(self.W)
+                    print("----->", len(data))
+                    s.send(pickle.dumps(len(data)))
+                    st = s.recv(1024)
+                    print("[Server - send]: rd = %s - recv starttttt from client %s" % (rd, client_addr))
+                    s.sendall(data)
+                    print("[Server - send]: rd = %s, server send to client %s" % (rd, client_addr))
+                    data = s.recv(1024)
+                    if data:
+                        print("[Server - send]: rd = %s - recv ACK from client %s" % (rd, client_addr))
+                    else:
+                        print("[Server - send]: rd = %s - recv 00000 from client %s" % (rd, client_addr))
+            except:
+                print("[Server - send]: rd = %s - error send model to client %s" % (rd, client_addr))
+                continue
 
     def select_clients(self, clients, frac=1.0):
         return random.sample(clients, int(len(clients)*frac))
 
     def update_model(self):
-        # print("update_model???")
-        if not self.dw_q.empty():
+#        if not self.dw_q.empty():
+        if self.dw_q.qsize() >= N_CLIENTS:
             dws = []
             with self.lock:
                 while not self.dw_q.empty():

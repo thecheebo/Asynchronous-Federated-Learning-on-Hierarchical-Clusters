@@ -29,6 +29,7 @@ def main(N_CLIENTS):
     for i, data in enumerate(client_datas):
         print("---->", i)
         client = Client(CF10Net, lambda x : torch.optim.SGD(x, lr=0.001, momentum=0.9), data, id=i)
+#        client = Client(CF10Net, lambda x : torch.optim.Adam(x, lr=0.001), data, id=i)
         
 
 def prepare_data(N_CLIENTS):
@@ -68,7 +69,7 @@ class Client(FederatedTrainingDevice):
         self.dW = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
         self.W_old = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
 
-        self.W_new = None
+        self.W_new = {key : value for key, value in self.model.named_parameters()}
         self.W_new_recv = False
 
         self.lock = Lock()
@@ -107,7 +108,7 @@ class Client(FederatedTrainingDevice):
                         print("[Client - %s - recv]: Connected by %s" % (self.id, addr))
                         data = conn.recv(1024)
                         size = pickle.loads(data)
-                        print("<------- len = ", size)
+#                        print("<------- len = ", size)
                         conn.sendall(b"start!!!")
                         while True:
                             data = conn.recv(1024)
@@ -123,55 +124,56 @@ class Client(FederatedTrainingDevice):
                     recv_byte = b"".join(recv_data)
                     print("<------- ", len(recv_byte))
                     recv_data = pickle.loads(recv_byte)
-#c                   print(333)
                     print("[Client - %s - recv]: received '%s' from addr %s" % (self.id, len(recv_data), addr))
 #                    with self.lock:
 #                        print(1)
 #                        copy(target=self.W_new, source=recv_data)
-#                        print(2)
-#                        # self.W_new = recv_data
-#                        self.W_new_recv = True
-#                        print(3)
+#                    print(2)
+                    self.W_new = recv_data
+                    self.W_new_recv = True
+#                    print(3)
                 except:
                     print("[Client - %s - recv]: error..." % self.id)
                     continue
     
 
     def client_trn_loop(self):
-        epoch = 1
+        rd = 1
         while True:
             try:
-                print("[Client - %s - trn] epoch = %s - begin" % (self.id, epoch))
+#                print("[Client - %s - trn] rd = %s - begin" % (self.id, rd))
     
-                # with self.lock:
-                #     self.sync_model()
-                #     self.W_new_recv = False
-                #     print("[Client - %s - trn] epoch = %s - sync done" % (self.id, epoch))
+                if rd > 1 and not self.sync_model():
+                    continue
+#                self.sync_model()
+
+                print("[Client - %s - trn] rd = %s - sync done" % (self.id, rd))
     
                 # train
                 train_stats = self.compute_weight_update(epochs=1)
-                print("[Client - %s - trn] epoch = %s - train done" % (self.id, epoch))
+                print("[Client - %s - trn] rd = %s - train done" % (self.id, rd))
                 self.reset()
-                print("[Client - %s - trn] epoch = %s - reset done" % (self.id, epoch))
+#                print("[Client - %s - trn] rd = %s - reset done" % (self.id, rd))
     
+ #               if rd % 10 == 0:
                 HOST = '127.0.0.1' 
                 PORT = 7007        
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.connect((HOST, PORT))
-                    print("[Client - %s - trn] epoch = %s - connected" % (self.id, epoch))
+                    print("[Client - %s - trn] rd = %s - connected" % (self.id, rd))
 #                    print(self.dW)
-                    data = pickle.dumps(self.W)
+                    data = pickle.dumps(self.dW)
                     print("----->", len(data))
                     s.send(pickle.dumps(len(data)))
                     st = s.recv(1024)
-                    print("recv starrttttttttttt")
+#                    print("recv starrttttttttttt")
                     s.sendall(data)
-                    print("[Client - %s - trn] epoch = %s - done, sent to server" % (self.id, epoch))
+                    print("[Client - %s - trn] rd = %s - done, sent to server" % (self.id, rd))
                     data = s.recv(1024)
-                    print("[Client - %s - trn] epoch = %s - recv ACK from server" % (self.id, epoch))
+                    print("[Client - %s - trn] rd = %s - recv ACK from server" % (self.id, rd))
+                rd += 1
             except:
-                print("[Client - %s - trn] epoch = %s - error.." % (self.id, epoch))
-            epoch += 1
+                print("[Client - %s - trn] rd = %s - error.." % (self.id, rd))
 #            time.sleep(10)
 
 
@@ -181,11 +183,14 @@ class Client(FederatedTrainingDevice):
             # with self.lock:
             copy(target=self.W, source=self.W_new)
             self.W_new_recv = False
+            return True
+        return False
+
 
     def compute_weight_update(self, epochs=1, loader=None):
         # with self.lock:
         copy(target=self.W_old, source=self.W)
-#         self.optimizer.param_groups[0]["lr"]*=0.99
+#        self.optimizer.param_groups[0]["lr"]*=0.99
         train_stats = train_op(self.model, self.train_loader if not loader else loader, self.optimizer, epochs)
         subtract_(target=self.dW, minuend=self.W, subtrahend=self.W_old)
         return train_stats

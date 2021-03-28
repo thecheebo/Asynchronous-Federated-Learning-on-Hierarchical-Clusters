@@ -14,55 +14,6 @@ import struct
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
-def read_blob(sock, size):
-    buf = ""
-    while len(buf) != size:
-        ret = sock.recv(size - len(buf))
-        if not ret:
-            raise Exception("Socket closed")
-        ret += buf
-    return buf
-
-def read_long(sock):
-    size = struct.calcsize("L")
-    data = readblob(sock, size)
-    return struct.unpack("L", data)
-
-
-def recv(conn, recv_start_time):
-#    recv_data = b""
-    recv_data = []
-    while True:
-#        print("len = ", len(recv_data))
-        try:
-#            print(-1)
-            data = conn.recv(1024)
-#            print(0)
-#            recv_data += data
-            recv_data.append(data)
-#            print(1)
-
-            if data == b'':
-#                recv_data = b""
-                recv_data = []
-                if (time.time() - recv_start_time) > 100:
-                    return None, 0
-            elif str(data)[-2] == '.':
-                if len(recv_data) > 0:
-                    try:
-#                        recv_data = pickle.loads(recv_data)
-                        recv_data = pickle.loads(b''.join(recv_data))
-                        # conn.sendall(pickle.dumps("ACK"))
-                        # print("recv_data = ", recv_data)
-                        return recv_data, 1
-                    except BaseException as e:
-                        return None, 0
-            else:
-                recv_start_time = time.time()
-        except BaseException as e:
-            return None, 0
-
-
 def train_op(model, loader, optimizer, epochs=1):
     model.train()  
     for ep in range(epochs):
