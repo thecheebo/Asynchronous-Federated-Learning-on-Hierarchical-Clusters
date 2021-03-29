@@ -15,6 +15,7 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 
 import models
 from models import CF10Net
@@ -22,7 +23,7 @@ from helper import ExperimentLogger, display_train_stats
 from devices import *
 from data_utils import split_data, CustomSubset
 
-def main(N_CLIENTS):
+def main(N_LEADERS, N_CLIENTS):
     test_data, testloader = prepare_data()
 
     print("--> Creating server...")
@@ -38,7 +39,6 @@ def prepare_data():
     testloader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False, num_workers=0)
 
     test_idcs = np.random.permutation(len(testset))
-    print(len(test_idcs))
 
     return CustomSubset(testset, test_idcs, transforms.Compose([transforms.ToTensor()])), testloader
 
@@ -52,6 +52,8 @@ class Server(FederatedTrainingDevice):
         self.client_list = []
         for i in range(N_CLIENTS):
             self.client_list.append(('127.0.0.1', 9000 + i))
+        for i in range(N_LEADERS):
+            self.client_list.append(('127.0.0.1', 8000 + 2 * i))
 
         try:
             server_threads = []
@@ -102,6 +104,9 @@ class Server(FederatedTrainingDevice):
                     print("[Server - recv]: received %s from addr %s" % (len(recv_data), addr))
                #     print(recv_data["conv1.weight"][:50])
                     self.dw_q.put(recv_data)
+#                    f = open("a.txt", "a")
+#                    f.write(recv_data)
+#                    f.close()
                     print("[Server - recv]: putted in queue")
                 except:
                     print("[Server - recv]: error...")
@@ -109,15 +114,22 @@ class Server(FederatedTrainingDevice):
     
     
     def server_upd_eval_loop(self):
-        global acc_server
+        accs = []
+#        total_rd = 3
         rd = 1
+#        while rd < total_rd:
         while True:
             if rd == 1 or self.update_model():
-                acc_server = [self.evaluate()]
-                print("[Server - upd] rd = %s, acc = %s" % (rd, acc_server))
+                acc = self.evaluate()
+#                accs.append(acc)
+                f = open("lol.txt", "a")
+                f.write(str(acc))
+                f.close()
+                print("[Server - upd] rd = %s, acc = [ %s ]" % (rd, acc))
 #                self.send_model(rd)
                 rd += 1
             time.sleep(5)
+#        self.display(accs)
     
     
     def server_send_loop(self):
@@ -154,7 +166,7 @@ class Server(FederatedTrainingDevice):
 
     def update_model(self):
 #        if not self.dw_q.empty():
-        if self.dw_q.qsize() >= N_CLIENTS:
+        if self.dw_q.qsize() >= len(self.client_list):
             dws = []
             with self.lock:
                 while not self.dw_q.empty():
@@ -165,6 +177,21 @@ class Server(FederatedTrainingDevice):
                 print("[Server - upd]: Updated model")
                 return True
         return False
+
+    def display(self, accs):
+        rds = len(accs)
+        rounds = np.array(range(rds)) + 1
+
+        plt.figure(figsize=(8,4))
+        plt.plot(rounds, accs, color="C0")
+    
+        plt.xlabel("Communication Rounds")
+        plt.ylabel("Accuracy")
+    
+        plt.xlim(1, rds)
+        plt.ylim(0,1)
+    
+        plt.show()
 
 
 #class SocketThread(Thread):
@@ -237,9 +264,14 @@ class Server(FederatedTrainingDevice):
 
 if __name__ == "__main__":
     try:
-        N_CLIENTS = int(sys.argv[1])
+        N_LEADERS = int(sys.argv[1])
+        N_CLIENTS = int(sys.argv[2])
+        if N_LEADERS != 0 and N_CLIENTS != 0:
+            sys.exit("""Well, either N_LEADERS or N_CLIENTS must be 0!
+            N_LEADERS == 0 --> baseline
+            N_CLIENTS == 0 --> with leaders""")
     except Exception as e:
-        print("args: N_CLIENTS")
+        print("args: N_LEADERS, N_CLIENTS")
         sys.exit()
 
-    main(N_CLIENTS)
+    main(N_LEADERS, N_CLIENTS)

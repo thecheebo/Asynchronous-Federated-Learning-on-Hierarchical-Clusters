@@ -22,13 +22,16 @@ from helper import ExperimentLogger, display_train_stats
 from devices import *
 from data_utils import split_data, CustomSubset
 
-def main(N_CLIENTS):
+def main(N_LEADERS, N_CLIENTS):
     client_datas = prepare_data(N_CLIENTS)
 
     print("--> Creating clients...", len(client_datas))
     for i, data in enumerate(client_datas):
-        print("---->", i)
-        client = Client(CF10Net, lambda x : torch.optim.SGD(x, lr=0.001, momentum=0.9), data, id=i)
+        leader_id = -1
+        if N_LEADERS > 0:
+            group_size = int(N_CLIENTS / N_LEADERS)
+            leader_id = int(i / group_size)
+        client = Client(CF10Net, lambda x : torch.optim.SGD(x, lr=0.001, momentum=0.9), data, id=i, leader_id=leader_id)
 #        client = Client(CF10Net, lambda x : torch.optim.Adam(x, lr=0.001), data, id=i)
         
 
@@ -56,7 +59,7 @@ def prepare_data(N_CLIENTS):
 
 
 class Client(FederatedTrainingDevice):
-    def __init__(self, model_fn, optimizer_fn, data, id, leader_id=0, batch_size=128, train_frac=0.8):
+    def __init__(self, model_fn, optimizer_fn, data, id, leader_id=-1, batch_size=128, train_frac=0.8):
         super().__init__(model_fn, data)
         self.optimizer = optimizer_fn(self.model.parameters())
 
@@ -125,10 +128,6 @@ class Client(FederatedTrainingDevice):
                     print("<------- ", len(recv_byte))
                     recv_data = pickle.loads(recv_byte)
                     print("[Client - %s - recv]: received '%s' from addr %s" % (self.id, len(recv_data), addr))
-#                    with self.lock:
-#                        print(1)
-#                        copy(target=self.W_new, source=recv_data)
-#                    print(2)
                     self.W_new = recv_data
                     self.W_new_recv = True
 #                    print(3)
@@ -141,8 +140,6 @@ class Client(FederatedTrainingDevice):
         rd = 1
         while True:
             try:
-#                print("[Client - %s - trn] rd = %s - begin" % (self.id, rd))
-    
                 if rd > 1 and not self.sync_model():
                     continue
 #                self.sync_model()
@@ -155,9 +152,8 @@ class Client(FederatedTrainingDevice):
                 self.reset()
 #                print("[Client - %s - trn] rd = %s - reset done" % (self.id, rd))
     
- #               if rd % 10 == 0:
                 HOST = '127.0.0.1' 
-                PORT = 7007        
+                PORT = 7007 if self.leader_id == -1 else (8000 + self.leader_id * 2 + 1)        
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.connect((HOST, PORT))
                     print("[Client - %s - trn] rd = %s - connected" % (self.id, rd))
@@ -168,9 +164,9 @@ class Client(FederatedTrainingDevice):
                     st = s.recv(1024)
 #                    print("recv starrttttttttttt")
                     s.sendall(data)
-                    print("[Client - %s - trn] rd = %s - done, sent to server" % (self.id, rd))
+                    print("[Client - %s - trn] rd = %s - done, sent to server/leader %s" % (self.id, rd, PORT))
                     data = s.recv(1024)
-                    print("[Client - %s - trn] rd = %s - recv ACK from server" % (self.id, rd))
+                    print("[Client - %s - trn] rd = %s - recv ACK from server/leader" % (self.id, rd))
                 rd += 1
             except:
                 print("[Client - %s - trn] rd = %s - error.." % (self.id, rd))
@@ -203,11 +199,12 @@ class Client(FederatedTrainingDevice):
 
 if __name__ == "__main__":
     try:
-        N_CLIENTS = int(sys.argv[1])
+        N_LEADERS = int(sys.argv[1])
+        N_CLIENTS = int(sys.argv[2])
     except Exception as e:
-        print("args: N_CLIENTS")
+        print("args: N_LEADERS, N_CLIENTS")
         sys.exit()
 
-    main(N_CLIENTS)
+    main(N_LEADERS, N_CLIENTS)
 
 
