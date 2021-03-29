@@ -22,7 +22,7 @@ from helper import ExperimentLogger, display_train_stats
 from devices import *
 from data_utils import split_data, CustomSubset
 
-def main(N_CLIENTS):
+def main(N_LEADERS, N_CLIENTS):
     test_data, testloader = prepare_data()
 
     print("--> Creating server...")
@@ -38,7 +38,6 @@ def prepare_data():
     testloader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False, num_workers=0)
 
     test_idcs = np.random.permutation(len(testset))
-    print(len(test_idcs))
 
     return CustomSubset(testset, test_idcs, transforms.Compose([transforms.ToTensor()])), testloader
 
@@ -52,6 +51,8 @@ class Server(FederatedTrainingDevice):
         self.client_list = []
         for i in range(N_CLIENTS):
             self.client_list.append(('127.0.0.1', 9000 + i))
+        for i in range(N_LEADERS):
+            self.client_list.append(('127.0.0.1', 8000 + 2 * i))
 
         try:
             server_threads = []
@@ -102,6 +103,9 @@ class Server(FederatedTrainingDevice):
                     print("[Server - recv]: received %s from addr %s" % (len(recv_data), addr))
                #     print(recv_data["conv1.weight"][:50])
                     self.dw_q.put(recv_data)
+#                    f = open("a.txt", "a")
+#                    f.write(recv_data)
+#                    f.close()
                     print("[Server - recv]: putted in queue")
                 except:
                     print("[Server - recv]: error...")
@@ -154,7 +158,7 @@ class Server(FederatedTrainingDevice):
 
     def update_model(self):
 #        if not self.dw_q.empty():
-        if self.dw_q.qsize() >= N_CLIENTS:
+        if self.dw_q.qsize() >= len(self.client_list):
             dws = []
             with self.lock:
                 while not self.dw_q.empty():
@@ -237,9 +241,10 @@ class Server(FederatedTrainingDevice):
 
 if __name__ == "__main__":
     try:
-        N_CLIENTS = int(sys.argv[1])
+        N_LEADERS = int(sys.argv[1])
+        N_CLIENTS = int(sys.argv[2])
     except Exception as e:
-        print("args: N_CLIENTS")
+        print("args: N_LEADERS, N_CLIENTS")
         sys.exit()
 
-    main(N_CLIENTS)
+    main(N_LEADERS, N_CLIENTS)
