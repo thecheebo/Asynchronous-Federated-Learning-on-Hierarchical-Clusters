@@ -15,6 +15,7 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 
 import models
 from models import CF10Net
@@ -113,15 +114,22 @@ class Server(FederatedTrainingDevice):
     
     
     def server_upd_eval_loop(self):
-        global acc_server
+        accs = []
+#        total_rd = 3
         rd = 1
+#        while rd < total_rd:
         while True:
             if rd == 1 or self.update_model():
-                acc_server = [self.evaluate()]
-                print("[Server - upd] rd = %s, acc = %s" % (rd, acc_server))
+                acc = self.evaluate()
+#                accs.append(acc)
+                f = open("lol.txt", "a")
+                f.write(str(acc))
+                f.close()
+                print("[Server - upd] rd = %s, acc = [ %s ]" % (rd, acc))
 #                self.send_model(rd)
                 rd += 1
             time.sleep(5)
+#        self.display(accs)
     
     
     def server_send_loop(self):
@@ -169,6 +177,21 @@ class Server(FederatedTrainingDevice):
                 print("[Server - upd]: Updated model")
                 return True
         return False
+
+    def display(self, accs):
+        rds = len(accs)
+        rounds = np.array(range(rds)) + 1
+
+        plt.figure(figsize=(8,4))
+        plt.plot(rounds, accs, color="C0")
+    
+        plt.xlabel("Communication Rounds")
+        plt.ylabel("Accuracy")
+    
+        plt.xlim(1, rds)
+        plt.ylim(0,1)
+    
+        plt.show()
 
 
 #class SocketThread(Thread):
@@ -243,6 +266,10 @@ if __name__ == "__main__":
     try:
         N_LEADERS = int(sys.argv[1])
         N_CLIENTS = int(sys.argv[2])
+        if N_LEADERS != 0 and N_CLIENTS != 0:
+            sys.exit("""Well, either N_LEADERS or N_CLIENTS must be 0!
+            N_LEADERS == 0 --> baseline
+            N_CLIENTS == 0 --> with leaders""")
     except Exception as e:
         print("args: N_LEADERS, N_CLIENTS")
         sys.exit()
