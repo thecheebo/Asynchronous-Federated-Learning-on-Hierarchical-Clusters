@@ -11,6 +11,18 @@
 ###	python leader.py <num_of_leaders> <num_of_clients> 
 ###	python client.py <num_of_leaders> <num_of_clients> 
 
+## Build with Docker-compose:
+### Build/Run:
+```shell
+docker-compose build # build all three types of services
+docker-compose up # run all three types of services 
+```
+
+### Modify Number of clients/servers
+Edit `docker-compose.yaml` to change `ARG_0` and `ARG_1` for each service type.
+For details see above section commands.
+
+
 Major files:     
 	server.py,      
 	leader.py,      
