@@ -12,6 +12,6 @@ RUN pip install -r requirements.txt
 COPY . .
 
 # command to run on container start
-CMD [ "python", "server.py 1" ]
-CMD [ "python", "client.py 1" ]
+CMD [ "python", "./server.py", "1" ]
+#CMD [ "python", "./client.py 1" ]
 
