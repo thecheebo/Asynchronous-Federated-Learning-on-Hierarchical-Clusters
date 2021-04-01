@@ -11,7 +11,9 @@ RUN pip install -r requirements.txt
 # copy the content of the local src directory to the working directory
 COPY . .
 
-# command to run on container start
-CMD [ "python", "./server.py", "1" ]
-#CMD [ "python", "./client.py 1" ]
+ENV SERVICE_TYPE server
+ENV ARG_0 0
+ENV ARG_1 0
 
+# command to run on container start
+CMD python ./$SERVICE_TYPE.py $ARG_0 $ARG_1
