@@ -8,11 +8,12 @@
 	
 ## With leaders run:
 ###	python server.py <num_of_leaders> 0        
-###	python client.py <num_of_leaders> <num_of_clients> 
+###	python leader.py <num_of_leaders> <num_of_clients> 
 ###	python client.py <num_of_leaders> <num_of_clients> 
 
 Major files:     
 	server.py,      
+	leader.py,      
 	client.py,      
 	devices.py
 
