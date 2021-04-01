@@ -2,18 +2,18 @@ services:
   client:
     build: .
     environment:
-      - SERVICE_TYPE="client"
+      - SERVICE_TYPE=client
       - ARG_0=0
       - ARG_1=1
   leader:
     build: .
     environment:
-      - SERVICE_TYPE="leader"
+      - SERVICE_TYPE=leader
       - ARG_0=0
       - ARG_1=1
   server:
     build: .
     environment:
-      - SERVICE_TYPE="server"
+      - SERVICE_TYPE=server
       - ARG_0=0
       - ARG_1=1
