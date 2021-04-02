@@ -39,7 +39,7 @@ def prepare_data(N_CLIENTS):
     print("--> Preparing and splitting data...")
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
-    trainset = torchvision.datasets.CIFAR10(root='~/data', train=True, download=False, transform=transform)
+    trainset = torchvision.datasets.CIFAR10(root='~/data', train=True, download=True, transform=transform)
 
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=128, shuffle=True, num_workers=0)
 
@@ -96,7 +96,7 @@ class Client(FederatedTrainingDevice):
 
 
     def client_recv_loop(self):
-        HOST = '127.0.0.1'     
+        HOST = '0.0.0.0'     
         PORT = 9000 + self.id
     
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -158,7 +158,7 @@ class Client(FederatedTrainingDevice):
                 self.reset()
 #                print("[Client - %s - trn] rd = %s - reset done" % (self.id, rd))
     
-                HOST = '127.0.0.1' 
+                HOST = '172.22.157.8' 
                 PORT = 7007 if self.leader_id == -1 else (8000 + self.leader_id * 2 + 1)        
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.connect((HOST, PORT))

@@ -27,8 +27,6 @@ from data_utils import split_data, CustomSubset
 def main(N_LEADERS, N_CLIENTS):
     test_data, testloader = prepare_data()
 
-    stop_flag = False
-
     print("--> Creating server...")
     server = Server(CF10Net, test_data, testloader)
 
@@ -37,7 +35,7 @@ def prepare_data():
     print("--> Preparing data...")
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
-    testset = torchvision.datasets.CIFAR10(root='~/data', train=False, download=False, transform=transform)
+    testset = torchvision.datasets.CIFAR10(root='~/data', train=False, download=True, transform=transform)
 
     testloader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False, num_workers=0)
 
@@ -73,11 +71,6 @@ class Server(FederatedTrainingDevice):
         except (KeyboardInterrupt):
             print("Gracefully shutting server down...")
             self.stop_flag = True
-#        finally:
-#            stop_flag = True
-#            print("Exiting...")
-#            for thread in server_threads:
-#                thread.join()
 
 
     def server_recv_loop(self):
