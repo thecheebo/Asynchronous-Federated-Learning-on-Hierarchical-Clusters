@@ -23,8 +23,11 @@ from helper import ExperimentLogger, display_train_stats
 from devices import *
 from data_utils import split_data, CustomSubset
 
+
 def main(N_LEADERS, N_CLIENTS):
     test_data, testloader = prepare_data()
+
+    stop_flag = False
 
     print("--> Creating server...")
     server = Server(CF10Net, test_data, testloader)
@@ -55,6 +58,7 @@ class Server(FederatedTrainingDevice):
         for i in range(N_LEADERS):
             self.client_list.append(('127.0.0.1', 8000 + 2 * i))
 
+        self.stop_flag = False
         try:
             server_threads = []
             # recv thread
@@ -66,8 +70,14 @@ class Server(FederatedTrainingDevice):
 
             for thread in server_threads:
                 thread.start()
-        except (KeyboardInterrupt, SystemExit):
+        except (KeyboardInterrupt):
             print("Gracefully shutting server down...")
+            self.stop_flag = True
+#        finally:
+#            stop_flag = True
+#            print("Exiting...")
+#            for thread in server_threads:
+#                thread.join()
 
 
     def server_recv_loop(self):
@@ -78,6 +88,7 @@ class Server(FederatedTrainingDevice):
             s.bind((HOST, PORT))
             s.listen()
             while True:
+                if self.stop_flag: break
                 try:
                     print("[Server - recv]: listening...")
                     conn, addr = s.accept()
@@ -111,33 +122,41 @@ class Server(FederatedTrainingDevice):
                 except:
                     print("[Server - recv]: error...")
                     continue
+        print("[Server - recv]: *** EXIT ***")
     
     
     def server_upd_eval_loop(self):
         accs = []
-#        total_rd = 3
+        total_rd = 100
         rd = 1
+        start_time = time.time()
 #        while rd < total_rd:
         while True:
+            if self.stop_flag: break
             if rd == 1 or self.update_model():
                 acc = self.evaluate()
 #                accs.append(acc)
                 f = open("lol.txt", "a")
-                f.write(str(acc))
+                f.write("%s, %s, %s\n" % (rd, acc, int(time.time() - start_time)))
                 f.close()
                 print("[Server - upd] rd = %s, acc = [ %s ]" % (rd, acc))
 #                self.send_model(rd)
                 rd += 1
             time.sleep(5)
+            if rd >= total_rd:
+                self.stop_flag = True
 #        self.display(accs)
+        print("[Server - upd]: *** EXIT ***")
     
     
     def server_send_loop(self):
         rd = 1
         while True:
+            if self.stop_flag: break
             self.send_model(rd)
             time.sleep(5)
             rd += 1
+        print("[Server - send]: *** EXIT ***")
 
 
     def send_model(self, rd):

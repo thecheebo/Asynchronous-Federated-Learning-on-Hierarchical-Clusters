@@ -78,6 +78,7 @@ class Client(FederatedTrainingDevice):
         self.lock = Lock()
 
         ###  Threads  ###
+        self.stop_flag = False
         try:
             client_threads = []
             # recv thread
@@ -102,6 +103,7 @@ class Client(FederatedTrainingDevice):
             s.bind((HOST, PORT))
             s.listen()
             while True:
+                if self.stop_flag: break
                 try:
                     print("[Client - %s - recv]: client listening..." % self.id)
                     conn, addr = s.accept()
@@ -134,11 +136,15 @@ class Client(FederatedTrainingDevice):
                 except:
                     print("[Client - %s - recv]: error..." % self.id)
                     continue
+        print("[Client - %s - recv]: *** EXIT ***" % self.id)
     
 
     def client_trn_loop(self):
         rd = 1
+        fail_time = None
         while True:
+            if fail_time and time.time() - fail_time > 5: self.stop_flag = True
+            if self.stop_flag: break
             try:
                 if rd > 1 and not self.sync_model():
                     continue
@@ -168,9 +174,14 @@ class Client(FederatedTrainingDevice):
                     data = s.recv(1024)
                     print("[Client - %s - trn] rd = %s - recv ACK from server/leader" % (self.id, rd))
                 rd += 1
+                fail_time = None
+
             except:
                 print("[Client - %s - trn] rd = %s - error.." % (self.id, rd))
+                if not fail_time: fail_time = time.time()
 #            time.sleep(10)
+        print("[Client - %s - trn]: *** EXIT ***" % self.id)
+
 
 
 
