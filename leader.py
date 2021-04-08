@@ -47,7 +47,7 @@ class Leader(FederatedTrainingDevice):
 
 
     def leader_pass_W_loop(self):
-        HOST = '127.0.0.1'
+        HOST = '127.0.0.1' if LOCAL_TEST else '0.0.0.0'
         PORT = 8000 + self.id * 2
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -127,7 +127,7 @@ class Leader(FederatedTrainingDevice):
         rd = 1
         while True:
             if (self.dW_num >= len(self.client_list)):
-                HOST = '127.0.0.1'
+                HOST = '127.0.0.1' if LOCAL_TEST else 'sp21-cs525-g19-01.cs.illinois.edu'
                 PORT = 7007
                 data = pickle.dumps(self.cal_dW_avg())
                 self.send(data, (HOST, PORT))
@@ -176,4 +176,6 @@ if __name__ == "__main__":
         print("args: N_LEADERS, N_CLIENTS")
         sys.exit()
 
+    global LOCAL_TEST
+    LOCAL_TEST = True
     main(N_LEADERS, N_CLIENTS)
