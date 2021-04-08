@@ -22,7 +22,7 @@ from helper import ExperimentLogger, display_train_stats
 from devices import *
 from data_utils import split_data, CustomSubset
 
-def main(N_LEADERS, N_CLIENTS):
+def main(N_LEADERS, N_CLIENTS, LOCAL_TEST):
     client_datas = prepare_data(N_CLIENTS)
 
     print("--> Creating clients...", len(client_datas))
@@ -96,7 +96,7 @@ class Client(FederatedTrainingDevice):
 
 
     def client_recv_loop(self):
-        HOST = '0.0.0.0'     
+        HOST = '127.0.0.1' if LOCAL_TEST else '0.0.0.0'     
         PORT = 9000 + self.id
     
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -158,7 +158,10 @@ class Client(FederatedTrainingDevice):
                 self.reset()
 #                print("[Client - %s - trn] rd = %s - reset done" % (self.id, rd))
     
-                HOST = '172.22.157.8' 
+                if self.leader_id == -1 and not LOCAL_TEST:
+                    HOST = 'sp21-cs525-g19-01.cs.illinois.edu' 
+                else:
+                    HOST = '127.0.0.1'
                 PORT = 7007 if self.leader_id == -1 else (8000 + self.leader_id * 2 + 1)        
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.connect((HOST, PORT))
@@ -181,7 +184,6 @@ class Client(FederatedTrainingDevice):
                 if not fail_time: fail_time = time.time()
 #            time.sleep(10)
         print("[Client - %s - trn]: *** EXIT ***" % self.id)
-
 
 
 
@@ -216,6 +218,7 @@ if __name__ == "__main__":
         print("args: N_LEADERS, N_CLIENTS")
         sys.exit()
 
+    global LOCAL_TEST = True
     main(N_LEADERS, N_CLIENTS)
 
 

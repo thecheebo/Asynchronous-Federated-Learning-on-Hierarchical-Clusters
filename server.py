@@ -74,7 +74,7 @@ class Server(FederatedTrainingDevice):
 
 
     def server_recv_loop(self):
-        HOST = '127.0.0.1' 
+        HOST = '127.0.0.1' if LOCAL_TEST else '0.0.0.0'
         PORT = 7007        
     
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -286,4 +286,5 @@ if __name__ == "__main__":
         print("args: N_LEADERS, N_CLIENTS")
         sys.exit()
 
+    global LOCAL_TEST = True
     main(N_LEADERS, N_CLIENTS)
