@@ -56,6 +56,8 @@ class Server(FederatedTrainingDevice):
         for i in range(N_LEADERS):
             self.client_list.append(('127.0.0.1', 8000 + 2 * i))
 
+        self.TIME = 0
+
         self.stop_flag = False
         try:
             server_threads = []
@@ -105,9 +107,9 @@ class Server(FederatedTrainingDevice):
                     recv_byte = b"".join(recv_data)
                     print("<------- ", len(recv_byte))
                     recv_data = pickle.loads(recv_byte)
-                    print("[Server - recv]: received %s from addr %s" % (len(recv_data), addr))
+                    print("[Server - recv]: received %s from addr %s" % (recv_data, addr))
                #     print(recv_data["conv1.weight"][:50])
-                    self.dw_q.put(recv_data)
+                    self.dw_q.put(recv_data.model)
 #                    f = open("a.txt", "a")
 #                    f.write(recv_data)
 #                    f.close()
@@ -157,7 +159,7 @@ class Server(FederatedTrainingDevice):
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.connect(client_addr)
-                    data = pickle.dumps(self.W)
+                    data = pickle.dumps(Package(self.TIME, self.W))
                     print("----->", len(data))
                     s.send(pickle.dumps(len(data)))
                     st = s.recv(1024)
@@ -172,6 +174,7 @@ class Server(FederatedTrainingDevice):
             except:
                 print("[Server - send]: rd = %s - error send model to client %s" % (rd, client_addr))
                 continue
+        self.TIME += 1
 
     def select_clients(self, clients, frac=1.0):
         return random.sample(clients, int(len(clients)*frac))

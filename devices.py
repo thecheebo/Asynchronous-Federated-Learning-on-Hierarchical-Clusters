@@ -88,4 +88,8 @@ class FederatedTrainingDevice(object):
         return eval_op(self.model, self.testloader if not loader else loader)
   
  
+class Package:
+     def __init__(self, time=-1, model=None):
+         self.time = time
+         self.model = model
 

@@ -75,7 +75,7 @@ class Leader(FederatedTrainingDevice):
                                 break
                         conn.sendall(b"ACKACKAACK!!!")
                     recv_byte = b"".join(recv_data)
-                    print("[Leader - pass - W]: received %s from addr %s" % (len(recv_byte), addr))
+                    print("[Leader - pass - W]: received %s from addr %s" % (recv_byte, addr))
 
                     # send recv_byte to client_list
                     for client_addr in self.client_list:
@@ -115,8 +115,8 @@ class Leader(FederatedTrainingDevice):
                     recv_byte = b"".join(recv_data)
                     print("<------- ", len(recv_byte))
                     recv_data = pickle.loads(recv_byte)
-                    print("[Leader - recv]: received %s from addr %s" % (len(recv_data), addr))
-                    self.add_dw(recv_data)
+                    print("[Leader - recv]: received %s from addr %s" % (recv_data, addr))
+                    self.add_dw(recv_data.model)
                     print("[Leader - recv]: dW added")
                 except:
                     print("[Leader - recv]: error...")
@@ -129,7 +129,7 @@ class Leader(FederatedTrainingDevice):
             if (self.dW_num >= len(self.client_list)):
                 HOST = '127.0.0.1' if LOCAL_TEST else 'sp21-cs525-g19-01.cs.illinois.edu'
                 PORT = 7007
-                data = pickle.dumps(self.cal_dW_avg())
+                data = pickle.dumps(Package(-1, self.cal_dW_avg()))
                 self.send(data, (HOST, PORT))
                 rd += 1
             time.sleep(5)
