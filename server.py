@@ -286,5 +286,6 @@ if __name__ == "__main__":
         print("args: N_LEADERS, N_CLIENTS")
         sys.exit()
 
-    global LOCAL_TEST = True
+    global LOCAL_TEST
+    LOCAL_TEST = True
     main(N_LEADERS, N_CLIENTS)

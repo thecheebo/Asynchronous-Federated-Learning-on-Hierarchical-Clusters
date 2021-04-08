@@ -22,7 +22,7 @@ from helper import ExperimentLogger, display_train_stats
 from devices import *
 from data_utils import split_data, CustomSubset
 
-def main(N_LEADERS, N_CLIENTS, LOCAL_TEST):
+def main(N_LEADERS, N_CLIENTS):
     client_datas = prepare_data(N_CLIENTS)
 
     print("--> Creating clients...", len(client_datas))
@@ -218,7 +218,8 @@ if __name__ == "__main__":
         print("args: N_LEADERS, N_CLIENTS")
         sys.exit()
 
-    global LOCAL_TEST = True
+    global LOCAL_TEST
+    LOCAL_TEST = True
     main(N_LEADERS, N_CLIENTS)
 
 
