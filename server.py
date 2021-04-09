@@ -37,7 +37,7 @@ def prepare_data():
 
     testset = torchvision.datasets.CIFAR10(root='~/data', train=False, download=True, transform=transform)
 
-    testloader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False, num_workers=0)
+    testloader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False, num_workers=1)
 
     test_idcs = np.random.permutation(len(testset))
 
@@ -127,16 +127,17 @@ class Server(FederatedTrainingDevice):
     def server_update_loop(self):
         while True:
             if not self.obj_q.empty():
+                print(self.W)
                 obj = self.obj_q.get()
                 self.obj_q.task_done()
                 lr = 0.001
                 t = obj.time
-                N = 1
-                param = lr / (self.TIME - t + 1) * obj.num / N
+                N = 4
+                alpha = lr / (self.TIME - t + 1) * obj.num / N
                 dw = obj.model
                 for name in dw:
-                    self.W[name].data -= dw[name].data.clone() * param
-                print("[Server - upd]: Updated model with T = %s, t = %s" % (self.TIME, t))
+                    self.W[name].data -= dw[name].data.clone() * alpha
+                print("[Server - upd]: Updated model with T = %s, t = %s, num = %s, alpha = %s" % (self.TIME, t, obj.num, alpha))
 
    
     def server_eval_loop(self):
@@ -150,7 +151,6 @@ class Server(FederatedTrainingDevice):
 #            if rd == 1 or self.update_model():
             try:
                 acc = self.evaluate()
-                print("[Server - eval] -->")
                 f = open("lol.txt", "a")
                 f.write("%s, %s, %s\n" % (rd, acc, int(time.time() - start_time)))
                 f.close()

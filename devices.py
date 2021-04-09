@@ -44,7 +44,7 @@ def eval_op(model, loader):
 
             samples += y.shape[0]
             correct += (predicted == y).sum().item()
-            print("------4")
+#            print("------4")
 
     return correct/samples
 
