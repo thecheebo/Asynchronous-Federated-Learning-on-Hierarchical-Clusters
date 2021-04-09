@@ -44,6 +44,7 @@ def eval_op(model, loader):
 
             samples += y.shape[0]
             correct += (predicted == y).sum().item()
+            print("------4")
 
     return correct/samples
 
@@ -89,7 +90,8 @@ class FederatedTrainingDevice(object):
   
  
 class Package:
-     def __init__(self, time=-1, model=None):
+     def __init__(self, time=-1, model=None, num=1):
          self.time = time
          self.model = model
+         self.num = num
 

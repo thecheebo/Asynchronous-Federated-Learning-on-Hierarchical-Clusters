@@ -37,6 +37,10 @@ class Leader(FederatedTrainingDevice):
         self.dW_sum = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
         self.dW_num = 0
         self.dW_avg = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
+        self.dw_t_q = Queue(maxsize=20)
+        self.lock = Lock()
+
+        self.TIME = 0
 
         try:
             Thread(name="leader_pass_w", target=self.leader_pass_W_loop).start()
@@ -75,7 +79,8 @@ class Leader(FederatedTrainingDevice):
                                 break
                         conn.sendall(b"ACKACKAACK!!!")
                     recv_byte = b"".join(recv_data)
-                    print("[Leader - pass - W]: received %s from addr %s" % (recv_byte, addr))
+                    self.TIME = pickle.loads(recv_byte).time
+                    print("[Leader - pass - W]: received TIME = %s from addr %s" % (self.TIME, addr))
 
                     # send recv_byte to client_list
                     for client_addr in self.client_list:
@@ -116,7 +121,8 @@ class Leader(FederatedTrainingDevice):
                     print("<------- ", len(recv_byte))
                     recv_data = pickle.loads(recv_byte)
                     print("[Leader - recv]: received %s from addr %s" % (recv_data, addr))
-                    self.add_dw(recv_data.model)
+                    self.dw_t_q.put(recv_data)
+                    # self.add_dw(recv_data.model)
                     print("[Leader - recv]: dW added")
                 except:
                     print("[Leader - recv]: error...")
@@ -126,10 +132,11 @@ class Leader(FederatedTrainingDevice):
     def leader_send_dW_avg_loop(self):
         rd = 1
         while True:
-            if (self.dW_num >= len(self.client_list)):
+            if (self.dw_t_q.qsize() >= len(self.client_list)):
                 HOST = '127.0.0.1' if LOCAL_TEST else 'sp21-cs525-g19-01.cs.illinois.edu'
                 PORT = 7007
-                data = pickle.dumps(Package(-1, self.cal_dW_avg()))
+                num = self.compute_dW()
+                data = pickle.dumps(Package(self.TIME, self.dW_sum, num))
                 self.send(data, (HOST, PORT))
                 rd += 1
             time.sleep(5)
@@ -150,6 +157,23 @@ class Leader(FederatedTrainingDevice):
                     print("[Leader - send]: recv 000000 from %s" % repr(addr))
         except:
             print("[Leader - send]: error send to %s" % repr(addr))
+
+
+    def compute_dW(self):
+        self.dW_sum = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
+        dw_t_list = []
+        with self.lock:
+            while not self.dw_t_q.empty():
+                dw_t_list.append(self.dw_t_q.get())
+                self.dw_t_q.task_done()
+
+        T = self.TIME
+        for dw_t in dw_t_list:
+            dw = dw_t.model
+            t = dw_t.time
+            for name in dw:
+                self.dW_sum[name].data += dw[name].data.clone() / (T - t + 1)
+        return len(dw_t_list)
 
 
     def add_dw(self, dW):

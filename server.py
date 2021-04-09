@@ -49,6 +49,7 @@ class Server(FederatedTrainingDevice):
         super().__init__(model_fn, data)
         self.testloader = testloader
         self.dw_q = Queue(maxsize=20)
+        self.obj_q = Queue(maxsize=20)
         self.lock = Lock()
         self.client_list = []
         for i in range(N_CLIENTS):
@@ -63,8 +64,10 @@ class Server(FederatedTrainingDevice):
             server_threads = []
             # recv thread
             server_threads.append(Thread(name="server_recv", target=self.server_recv_loop))
-            # update & eval thread
-            server_threads.append(Thread(name="server_upd_eval", target=self.server_upd_eval_loop))
+            # update thread
+            server_threads.append(Thread(name="server_update", target=self.server_update_loop))
+            # eval thread
+            server_threads.append(Thread(name="server_eval", target=self.server_eval_loop))
             # send thread
             server_threads.append(Thread(name="server_send", target=self.server_send_loop))
 
@@ -109,7 +112,8 @@ class Server(FederatedTrainingDevice):
                     recv_data = pickle.loads(recv_byte)
                     print("[Server - recv]: received %s from addr %s" % (recv_data, addr))
                #     print(recv_data["conv1.weight"][:50])
-                    self.dw_q.put(recv_data.model)
+               #     self.dw_q.put(recv_data.model)
+                    self.obj_q.put(recv_data)
 #                    f = open("a.txt", "a")
 #                    f.write(recv_data)
 #                    f.close()
@@ -119,8 +123,23 @@ class Server(FederatedTrainingDevice):
                     continue
         print("[Server - recv]: *** EXIT ***")
     
-    
-    def server_upd_eval_loop(self):
+
+    def server_update_loop(self):
+        while True:
+            if not self.obj_q.empty():
+                obj = self.obj_q.get()
+                self.obj_q.task_done()
+                lr = 0.001
+                t = obj.time
+                N = 1
+                param = lr / (self.TIME - t + 1) * obj.num / N
+                dw = obj.model
+                for name in dw:
+                    self.W[name].data -= dw[name].data.clone() * param
+                print("[Server - upd]: Updated model with T = %s, t = %s" % (self.TIME, t))
+
+   
+    def server_eval_loop(self):
         accs = []
         total_rd = 100
         rd = 1
@@ -128,20 +147,22 @@ class Server(FederatedTrainingDevice):
 #        while rd < total_rd:
         while True:
             if self.stop_flag: break
-            if rd == 1 or self.update_model():
+#            if rd == 1 or self.update_model():
+            try:
                 acc = self.evaluate()
-#                accs.append(acc)
+                print("[Server - eval] -->")
                 f = open("lol.txt", "a")
                 f.write("%s, %s, %s\n" % (rd, acc, int(time.time() - start_time)))
                 f.close()
-                print("[Server - upd] rd = %s, acc = [ %s ]" % (rd, acc))
+                print("[Server - eval] rd = %s, acc = [ %s ]" % (rd, acc))
 #                self.send_model(rd)
                 rd += 1
-            time.sleep(5)
+                time.sleep(10)
+            except:
+                print("[Server - eval] - error")
             if rd >= total_rd:
                 self.stop_flag = True
-#        self.display(accs)
-        print("[Server - upd]: *** EXIT ***")
+        print("[Server - eval]: *** EXIT ***")
     
     
     def server_send_loop(self):
@@ -149,7 +170,7 @@ class Server(FederatedTrainingDevice):
         while True:
             if self.stop_flag: break
             self.send_model(rd)
-            time.sleep(5)
+            time.sleep(10)
             rd += 1
         print("[Server - send]: *** EXIT ***")
 
@@ -179,7 +200,9 @@ class Server(FederatedTrainingDevice):
     def select_clients(self, clients, frac=1.0):
         return random.sample(clients, int(len(clients)*frac))
 
-    def update_model(self):
+
+
+    def update_model_old(self):
 #        if not self.dw_q.empty():
         if self.dw_q.qsize() >= len(self.client_list):
             dws = []
