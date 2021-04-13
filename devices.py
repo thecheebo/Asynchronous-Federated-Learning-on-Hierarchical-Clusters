@@ -27,7 +27,8 @@ def train_op(model, loader, optimizer, epochs=1, W_old=None, l2_lambda=0.01):
             # Add regularization term for async learning
             l2_reg = torch.tensor(0.)
             for name, param in model.named_parameters():
-                l2_reg += torch.norm(param.data - W_old[name].data)
+                if param.requires_grad:
+                    l2_reg += torch.norm(param.data - W_old[name].data)
             loss += l2_lambda * l2_reg
 
             running_loss += loss.item()*y.shape[0]
