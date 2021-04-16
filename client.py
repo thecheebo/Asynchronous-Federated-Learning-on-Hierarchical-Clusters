@@ -75,6 +75,9 @@ class Client(FederatedTrainingDevice):
         self.W_new = {key : value for key, value in self.model.named_parameters()}
         self.W_new_recv = False
 
+        self.TIME = -1
+        self.TIME_new = -1
+
         self.lock = Lock()
 
         ###  Threads  ###
@@ -129,9 +132,10 @@ class Client(FederatedTrainingDevice):
                     recv_byte = b"".join(recv_data)
                     print("<------- ", len(recv_byte))
                     recv_data = pickle.loads(recv_byte)
-                    print("[Client - %s - recv]: received '%s' from addr %s" % (self.id, len(recv_data), addr))
-                    self.W_new = recv_data
+                    print("[Client - %s - recv]: received '%s' from addr %s" % (self.id, recv_data, addr))
+                    self.W_new = recv_data.model
                     self.W_new_recv = True
+                    self.TIME_new = recv_data.time
 #                    print(3)
                 except:
                     print("[Client - %s - recv]: error..." % self.id)
@@ -150,13 +154,12 @@ class Client(FederatedTrainingDevice):
                     continue
 #                self.sync_model()
 
-                print("[Client - %s - trn] rd = %s - sync done" % (self.id, rd))
+                print("[Client - %s - trn] rd = %s - sync done, TIME = %s" % (self.id, rd, self.TIME))
     
                 # train
                 train_stats = self.compute_weight_update(epochs=1)
                 print("[Client - %s - trn] rd = %s - train done" % (self.id, rd))
                 self.reset()
-#                print("[Client - %s - trn] rd = %s - reset done" % (self.id, rd))
     
                 if self.leader_id == -1 and not LOCAL_TEST:
                     HOST = 'sp21-cs525-g19-01.cs.illinois.edu' 
@@ -167,7 +170,7 @@ class Client(FederatedTrainingDevice):
                     s.connect((HOST, PORT))
                     print("[Client - %s - trn] rd = %s - connected" % (self.id, rd))
 #                    print(self.dW)
-                    data = pickle.dumps(self.dW)
+                    data = pickle.dumps(Package(self.TIME, self.dW))
                     print("----->", len(data))
                     s.send(pickle.dumps(len(data)))
                     st = s.recv(1024)
@@ -192,6 +195,7 @@ class Client(FederatedTrainingDevice):
             # with self.lock:
             copy(target=self.W, source=self.W_new)
             self.W_new_recv = False
+            self.TIME = self.TIME_new
             return True
         return False
 
@@ -200,7 +204,7 @@ class Client(FederatedTrainingDevice):
         # with self.lock:
         copy(target=self.W_old, source=self.W)
 #        self.optimizer.param_groups[0]["lr"]*=0.99
-        train_stats = train_op(self.model, self.train_loader if not loader else loader, self.optimizer, epochs)
+        train_stats = train_op(self.model, self.train_loader if not loader else loader, self.optimizer, epochs, self.W_old)
         subtract_(target=self.dW, minuend=self.W, subtrahend=self.W_old)
         return train_stats
 
