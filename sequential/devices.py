@@ -2,13 +2,7 @@ import random
 import torch
 from torch.utils.data import DataLoader
 import numpy as np
-from sklearn.cluster import AgglomerativeClustering
-#from multiprocessing import Process, Pool, get_context, Queue
-from threading import Thread, Lock
 import time
-import socket
-import pickle
-import json
 import struct
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -52,8 +46,6 @@ def eval_op(model, loader):
 
             samples += y.shape[0]
             correct += (predicted == y).sum().item()
-#            print("------4")
-
     return correct/samples
 
 
