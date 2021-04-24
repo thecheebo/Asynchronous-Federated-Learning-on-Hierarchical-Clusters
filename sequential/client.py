@@ -18,7 +18,7 @@ from data_utils import split_data, CustomSubset
 
 
 class Client(FederatedTrainingDevice):
-    def __init__(self, model_fn, optimizer_fn, data, id, leader=None, batch_size=128, train_frac=0.8):
+    def __init__(self, model_fn, optimizer_fn, data, id, parent=None, batch_size=128, train_frac=0.8, l2_lambda=0.01):
         super().__init__(model_fn, data)
         self.optimizer = optimizer_fn(self.model.parameters())
 
@@ -26,7 +26,7 @@ class Client(FederatedTrainingDevice):
         self.train_loader = DataLoader(self.data_train, batch_size=batch_size, shuffle=True)
 
         self.id = id
-        self.leader = leader
+        self.parent = parent
 
         self.dW = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
         self.W_old = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
@@ -37,21 +37,19 @@ class Client(FederatedTrainingDevice):
         self.TIME = -1
         self.TIME_new = -1
 
+        self.l2_lambda = l2_lambda
+
 
     def train(self):
-        rd = 1
-        if rd == 1 or self.sync_model():
-            print("[Client - %s - trn] rd = %s - sync done, TIME = %s" % (self.id, rd, self.TIME))
-            # train
+        if self.sync_model():
+#            print("[Client - %s - trn] TIME = %s - sync done" % (self.id, self.TIME))
             train_stats = self.compute_weight_update(epochs=1)
-            print("[Client - %s - trn] rd = %s - train done" % (self.id, rd))
+            print("[Client - %s - trn] TIME = %s - train done" % (self.id, self.TIME))
             self.reset()
-            self.leader.obj_q.put(Package(self.TIME, self.dW))
-            rd += 1
 
 
     def sync_model(self):
-        if (self.W_new_recv):
+        if self.W_new_recv:
             copy(target=self.W, source=self.W_new)
             self.W_new_recv = False
             self.TIME = self.TIME_new
@@ -59,10 +57,14 @@ class Client(FederatedTrainingDevice):
         return False
 
 
+    def send(self):
+        self.parent.obj_q.put(Package(self.TIME, self.dW))
+
+
     def compute_weight_update(self, epochs=1, loader=None):
         copy(target=self.W_old, source=self.W)
 #        self.optimizer.param_groups[0]["lr"]*=0.99
-        train_stats = train_op(self.model, self.train_loader if not loader else loader, self.optimizer, epochs, self.W_old)
+        train_stats = train_op(self.model, self.train_loader if not loader else loader, self.optimizer, epochs, self.W_old, self.l2_lambda)
         subtract_(target=self.dW, minuend=self.W, subtrahend=self.W_old)
         return train_stats
 

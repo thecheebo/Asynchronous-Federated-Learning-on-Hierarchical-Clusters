@@ -35,7 +35,7 @@ def train_op(model, loader, optimizer, epochs=1, W_old=None, l2_lambda=0.01):
       
 def eval_op(model, loader):
     model.train()
-    samples, correct = 0, 0
+    samples, correct = 0.0, 0.0
 
     with torch.no_grad():
         for i, (x, y) in enumerate(loader):

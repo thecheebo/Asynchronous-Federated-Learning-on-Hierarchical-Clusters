@@ -22,38 +22,39 @@ class Leader(FederatedTrainingDevice):
         super().__init__(model_fn, None)
         self.id = id
         self.server = server
-        self.client_list = []
+        self.child_list = []
         self.dW_sum = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
         self.dW_num = 0
         self.dW_avg = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
         self.obj_q = Queue(maxsize=20)
-        self.new_W = None
+        self.W_new = None
+        self.TIME = -1
 
-        self.TIME = 0
 
     def pass_W(self):
-        if self.new_W != None:
-            for client in self.client_list:
-                client.W_new = self.new_W
-                client.W_new_recv = True
-        self.new_W = None
+        if self.W_new != None:
+            for child in self.child_list:
+                child.W_new = self.W_new
+                child.W_new_recv = True
+                child.TIME_new = self.TIME
+        self.W_new = None
 
-
-    def send_dW(self):
-        server.obj_q.put(Package(self.dW_sum, self.dW_num))
 
     def compute_dW(self):
         self.dW_sum = {key : torch.zeros_like(value) for key, value in self.model.named_parameters()}
-        dw_t_list = []
-        with self.lock:
-            while not self.obj_q.empty():
-                dw_t_list.append(self.obj_q.get())
-                self.obj_q.task_done()
-
+        self.dW_num = 0
         T = self.TIME
-        for dw_t in dw_t_list:
-            dw = dw_t.model
-            t = dw_t.time
+        while not self.obj_q.empty():
+            self.dW_num += 1
+            obj = self.obj_q.get()
+            self.obj_q.task_done()
+            dw = obj.model
+            t = obj.time
             for name in dw:
                 self.dW_sum[name].data += dw[name].data.clone() / (T - t + 1)
-        self.dW_num = len(dw_t_list)
+
+
+    def send_dW(self):
+        self.server.obj_q.put(Package(self.TIME, self.dW_sum, self.dW_num))
+
+
