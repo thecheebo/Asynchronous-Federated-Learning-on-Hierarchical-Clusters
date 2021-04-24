@@ -19,14 +19,16 @@ from data_utils import split_data, CustomSubset
 
 
 class Server(FederatedTrainingDevice):
-    def __init__(self, model_fn, data, testloader, child_list=[], lr=0.001, N=1, beta=5):
+    def __init__(self, model_fn, data, testloader, child_list=[], lr=0.001, N_CLIENTS=1, res_file="lol.txt", beta=5):
         super().__init__(model_fn, data)
+        self.res_file = res_file
         self.testloader = testloader
         self.obj_q = Queue(maxsize=20)
         self.child_list = child_list
         self.TIME = 0
         self.start_time = time.time()
-        self.N = N
+        self.N_CLIENTS = N_CLIENTS
+
         self.lr = lr
         self.beta = beta
 
@@ -43,7 +45,7 @@ class Server(FederatedTrainingDevice):
             obj = self.obj_q.get()
             self.obj_q.task_done()
             t = obj.time
-            alpha = self.lr * pow((self.TIME - t + 1), self.beta) * obj.num / self.N
+            alpha = self.lr * pow((self.TIME - t + 1), self.beta) * obj.num / self.N_CLIENTS
             dw = obj.model
             for name in dw:
                 self.W[name].data += dw[name].data * alpha
@@ -53,11 +55,10 @@ class Server(FederatedTrainingDevice):
     def eval(self):
         try:
             acc = self.evaluate()
-            f = open("lol.txt", "a")
+            f = open(self.res_file, "a")
             f.write("%s, %s, %s\n" % (self.TIME, acc, int(time.time() - self.start_time)))
             f.close()
             print("[Server - eval] TIME = %s, acc = [ %s ]" % (self.TIME, acc))
-            rd += 1
         except:
             print("[Server - eval] - error")
     

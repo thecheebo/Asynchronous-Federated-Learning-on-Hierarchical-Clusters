@@ -44,7 +44,7 @@ class Client(FederatedTrainingDevice):
         if self.sync_model():
 #            print("[Client - %s - trn] TIME = %s - sync done" % (self.id, self.TIME))
             train_stats = self.compute_weight_update(epochs=1)
-            print("[Client - %s - trn] TIME = %s - train done" % (self.id, self.TIME))
+#            print("[Client - %s - trn] TIME = %s - train done" % (self.id, self.TIME))
             self.reset()
 
 
