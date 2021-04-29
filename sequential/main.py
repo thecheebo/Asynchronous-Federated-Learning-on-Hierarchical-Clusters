@@ -21,13 +21,17 @@ from client import *
 from leader import *
 
 
-def main(N_CLIENTS, N_LEADERS, lr, l2_lambda, beta, select_rate, ROUNDS):
+def main(N_CLIENTS, N_LEADERS, lr, l2_lambda, beta, select_rate, ROUNDS, seed):
 
-    res_file = "exp__%s__%s__%s__%s__%s__%s.txt" % (N_CLIENTS, N_LEADERS, lr, l2_lambda, beta, select_rate)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.random.manual_seed(seed)
+
+    res_file = "exp__%s__%s__%s__%s__%s__%s__%s.txt" % (N_CLIENTS, N_LEADERS, lr, l2_lambda, beta, select_rate, seed)
     
     # Server
     test_data, testloader = server_prepare_data()
-    server = Server(CF10Net, test_data, testloader, lr=lr, N_CLIENTS=N_CLIENTS, res_file=res_file, beta=beta)
+    server = Server(CF10Net, test_data, testloader, lr=lr, N_CLIENTS=N_CLIENTS, res_file=res_file, beta=beta, seed=seed)
     
     # Client
     client_list = []
@@ -37,7 +41,7 @@ def main(N_CLIENTS, N_LEADERS, lr, l2_lambda, beta, select_rate, ROUNDS):
         if N_LEADERS > 0:
             group_size = int(N_CLIENTS / N_LEADERS)
             leader_id = int(i / group_size)
-        client_list.append(Client(CF10Net, lambda x : torch.optim.SGD(x, lr=lr, momentum=0.9), data, id=i, l2_lambda=l2_lambda))
+        client_list.append(Client(CF10Net, lambda x : torch.optim.SGD(x, lr=lr, momentum=0.9), data, id=i, l2_lambda=l2_lambda, seed=seed))
     
     # Leader
     leader_list = []
@@ -117,8 +121,9 @@ if __name__ == "__main__":
         beta = int(sys.argv[5])
         select_rate = float(sys.argv[6])
         ROUNDS = int(sys.argv[7])
+        seed = int(sys.argv[8])
     except Exception as e:
-        print("args: N_CLIENTS, N_LEADERS, lr, l2_lambda, beta, select_rate, ROUNDS")
+        print("args: N_CLIENTS, N_LEADERS, lr, l2_lambda, beta, select_rate, ROUNDS, seed")
         sys.exit()
 
-    main(N_CLIENTS, N_LEADERS, lr, l2_lambda, beta, select_rate, ROUNDS)
+    main(N_CLIENTS, N_LEADERS, lr, l2_lambda, beta, select_rate, ROUNDS, seed)

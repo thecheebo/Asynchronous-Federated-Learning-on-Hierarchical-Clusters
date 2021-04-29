@@ -19,7 +19,7 @@ from data_utils import split_data, CustomSubset
 
 
 class Server(FederatedTrainingDevice):
-    def __init__(self, model_fn, data, testloader, child_list=[], lr=0.001, N_CLIENTS=1, res_file="lol.txt", beta=5):
+    def __init__(self, model_fn, data, testloader, child_list=[], lr=0.001, N_CLIENTS=1, res_file="lol.txt", beta=5, seed=0):
         super().__init__(model_fn, data)
         self.res_file = res_file
         self.testloader = testloader
@@ -31,6 +31,8 @@ class Server(FederatedTrainingDevice):
 
         self.lr = lr
         self.beta = beta
+
+        self.seed = seed
 
 
     def send(self):

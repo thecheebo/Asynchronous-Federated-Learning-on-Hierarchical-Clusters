@@ -5,14 +5,19 @@ import numpy as np
 import time
 import struct
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+# device = "cuda" if torch.cuda.is_available() else "cpu"
+device = "cpu"
 
 
-def train_op(model, loader, optimizer, epochs=1, W_old=None, l2_lambda=0.01):
-    model.train()  
+def train_op(model, loader, optimizer, epochs=1, W_old=None, l2_lambda=0.01, seed=0):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.random.manual_seed(seed)
+
+    model.train()
     for ep in range(epochs):
         running_loss, samples = 0.0, 0
-        for x, y in loader: 
+        for x, y in loader:
             x, y = x.to(device), y.to(device)
             optimizer.zero_grad()
 
@@ -29,11 +34,21 @@ def train_op(model, loader, optimizer, epochs=1, W_old=None, l2_lambda=0.01):
             samples += y.shape[0]
 
             loss.backward()
-            optimizer.step()  
+            optimizer.step()
 
     return running_loss / samples
+
+
       
-def eval_op(model, loader):
+def eval_op(model, loader, seed=0):
+#    print("-----0")
+    random.seed(seed)
+#    print("-----1")
+    np.random.seed(seed)
+#    print("-----2")
+    torch.random.manual_seed(seed)
+#    print("-----3")
+
     model.train()
     samples, correct = 0.0, 0.0
 
@@ -67,7 +82,11 @@ def flatten(source):
     return torch.cat([value.flatten() for value in source.values()])
 
 
-def pairwise_angles(sources):
+def pairwise_angles(sources, seed=0):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.random.manual_seed(seed)
+
     angles = torch.zeros([len(sources), len(sources)])
     for i, source1 in enumerate(sources):
         for j, source2 in enumerate(sources):
@@ -86,7 +105,7 @@ class FederatedTrainingDevice(object):
 
 
     def evaluate(self, loader=None):
-        return eval_op(self.model, self.testloader if not loader else loader)
+        return eval_op(self.model, self.testloader if not loader else loader, self.seed)
   
  
 class Package:
