@@ -18,7 +18,7 @@ from data_utils import split_data, CustomSubset
 
 
 class Client(FederatedTrainingDevice):
-    def __init__(self, model_fn, optimizer_fn, data, id, parent=None, batch_size=128, train_frac=0.8, l2_lambda=0.01, seed=0):
+    def __init__(self, model_fn, optimizer_fn, data, id, parent=None, batch_size=128, train_frac=0.8, l2_lambda=0.01, seed=0, asynch=True):
         super().__init__(model_fn, data)
         self.optimizer = optimizer_fn(self.model.parameters())
 
@@ -35,28 +35,20 @@ class Client(FederatedTrainingDevice):
         self.W_new_recv = False
 
         self.TIME = -1
-        self.TIME_new = -1
 
         self.l2_lambda = l2_lambda
 
         self.seed = seed
+        self.asynch = asynch
 
 
     def train(self):
-        if self.sync_model():
-#            print("[Client - %s - trn] TIME = %s - sync done" % (self.id, self.TIME))
-            train_stats = self.compute_weight_update(epochs=1)
-#            print("[Client - %s - trn] TIME = %s - train done" % (self.id, self.TIME))
-            self.reset()
-
-
-    def sync_model(self):
-        if self.W_new_recv:
+        if self.TIME != -1:
             copy(target=self.W, source=self.W_new)
-            self.W_new_recv = False
-            self.TIME = self.TIME_new
-            return True
-        return False
+#        print("[Client - %s - trn] TIME = %s - sync done" % (self.id, self.TIME))
+        train_stats = self.compute_weight_update(epochs=1)
+#        print("[Client - %s - trn] TIME = %s - train done" % (self.id, self.TIME))
+        self.reset()
 
 
     def send(self):
@@ -66,7 +58,7 @@ class Client(FederatedTrainingDevice):
     def compute_weight_update(self, epochs=1, loader=None):
         copy(target=self.W_old, source=self.W)
 #        self.optimizer.param_groups[0]["lr"]*=0.99
-        train_stats = train_op(self.model, self.train_loader if not loader else loader, self.optimizer, epochs, self.W_old, self.l2_lambda, self.seed)
+        train_stats = train_op(self.model, self.train_loader if not loader else loader, self.optimizer, epochs, self.W_old, self.l2_lambda, self.seed, self.asynch)
         subtract_(target=self.dW, minuend=self.W, subtrahend=self.W_old)
         return train_stats
 

@@ -21,13 +21,13 @@ from client import *
 from leader import *
 
 
-def main(N_CLIENTS, N_LEADERS, lr, l2_lambda, beta, select_rate, ROUNDS, seed):
+def main(N_CLIENTS, lr, l2_lambda, beta, select_rate, ROUNDS, seed):
 
     random.seed(seed)
     np.random.seed(seed)
     torch.random.manual_seed(seed)
 
-    res_file = "exp__%s__%s__%s__%s__%s__%s__%s.txt" % (N_CLIENTS, N_LEADERS, lr, l2_lambda, beta, select_rate, seed)
+    res_file = "exp__async_no_hier__%s__%s__%s__%s__%s__%s.txt" % (N_CLIENTS, lr, l2_lambda, beta, select_rate, seed)
     
     # Server
     test_data, testloader = server_prepare_data()
@@ -37,39 +37,22 @@ def main(N_CLIENTS, N_LEADERS, lr, l2_lambda, beta, select_rate, ROUNDS, seed):
     client_list = []
     client_datas = client_prepare_data(N_CLIENTS)
     for i, data in enumerate(client_datas):
-        leader_id = -1
-        if N_LEADERS > 0:
-            group_size = int(N_CLIENTS / N_LEADERS)
-            leader_id = int(i / group_size)
-        client_list.append(Client(CF10Net, lambda x : torch.optim.SGD(x, lr=lr, momentum=0.9), data, id=i, l2_lambda=l2_lambda, seed=seed))
+        client = Client(CF10Net, lambda x : torch.optim.SGD(x, lr=lr, momentum=0.9), data, id=i, l2_lambda=l2_lambda, seed=seed)
+        client.parent = server
+        client_list.append(client)
     
-    # Leader
-    leader_list = []
-    for i in range(N_LEADERS):
-        leader = Leader(CF10Net, i)
-        leader.server = server
-        server.child_list.append(leader)
-        for j in range(group_size * i, group_size * (i+1)):
-            leader.child_list.append(client_list[j])
-            client_list[j].parent = leader
-        leader_list.append(leader)
-    
+    server.child_list = client_list
+
+   
     for i in range(ROUNDS):
     
         server.send()
-    
-        for leader in leader_list:
-            leader.pass_W()
     
         selected_client_list = random.sample(client_list, int(N_CLIENTS * select_rate))
     
         for client in selected_client_list:
             client.train()
             client.send()
-    
-        for leader in leader_list:
-            leader.compute_dW()
-            leader.send_dW()
     
         server.update()
         server.eval()
@@ -115,15 +98,14 @@ def client_prepare_data(N_CLIENTS):
 if __name__ == "__main__":
     try:
         N_CLIENTS = int(sys.argv[1])
-        N_LEADERS = int(sys.argv[2])
-        lr = float(sys.argv[3]) 
-        l2_lambda = float(sys.argv[4])
-        beta = int(sys.argv[5])
-        select_rate = float(sys.argv[6])
-        ROUNDS = int(sys.argv[7])
-        seed = int(sys.argv[8])
+        lr = float(sys.argv[2]) 
+        l2_lambda = float(sys.argv[3])
+        beta = int(sys.argv[4])
+        select_rate = float(sys.argv[5])
+        ROUNDS = int(sys.argv[6])
+        seed = int(sys.argv[7])
     except Exception as e:
-        print("args: N_CLIENTS, N_LEADERS, lr, l2_lambda, beta, select_rate, ROUNDS, seed")
+        print("args: N_CLIENTS, lr, l2_lambda, beta, select_rate, ROUNDS, seed")
         sys.exit()
 
-    main(N_CLIENTS, N_LEADERS, lr, l2_lambda, beta, select_rate, ROUNDS, seed)
+    main(N_CLIENTS, lr, l2_lambda, beta, select_rate, ROUNDS, seed)
