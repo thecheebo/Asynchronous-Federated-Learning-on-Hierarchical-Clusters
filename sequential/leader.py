@@ -18,7 +18,7 @@ from devices import *
 
 
 class Leader(FederatedTrainingDevice):
-    def __init__(self, model_fn, id, server=None):
+    def __init__(self, model_fn, id, server=None, asynch=True):
         super().__init__(model_fn, None)
         self.id = id
         self.server = server
@@ -29,14 +29,14 @@ class Leader(FederatedTrainingDevice):
         self.obj_q = Queue(maxsize=20)
         self.W_new = None
         self.TIME = -1
+        self.asynch = asynch
 
 
     def pass_W(self):
         if self.W_new != None:
             for child in self.child_list:
                 child.W_new = self.W_new
-                child.W_new_recv = True
-                child.TIME_new = self.TIME
+                child.TIME = self.TIME
         self.W_new = None
 
 
@@ -51,7 +51,10 @@ class Leader(FederatedTrainingDevice):
             dw = obj.model
             t = obj.time
             for name in dw:
-                self.dW_sum[name].data += dw[name].data.clone() / (T - t + 1)
+                if self.asynch:
+                    self.dW_sum[name].data += dw[name].data.clone() / (T - t + 1)
+                else:
+                    self.dW_sum[name].data += dw[name].data.clone()
 
 
     def send_dW(self):

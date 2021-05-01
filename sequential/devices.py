@@ -9,7 +9,7 @@ import struct
 device = "cpu"
 
 
-def train_op(model, loader, optimizer, epochs=1, W_old=None, l2_lambda=0.01, seed=0):
+def train_op(model, loader, optimizer, epochs=1, W_old=None, l2_lambda=0.01, seed=0, asynch=True):
     random.seed(seed)
     np.random.seed(seed)
     torch.random.manual_seed(seed)
@@ -23,12 +23,13 @@ def train_op(model, loader, optimizer, epochs=1, W_old=None, l2_lambda=0.01, see
 
             loss = torch.nn.CrossEntropyLoss()(model(x), y)
 
-            # Add regularization term for async learning
-            l2_reg = torch.tensor(0.)
-            for name, param in model.named_parameters():
-                if param.requires_grad:
-                    l2_reg += torch.norm(param.data - W_old[name].data)
-            loss += l2_lambda * l2_reg
+            if asynch:
+                # Add regularization term for async learning
+                l2_reg = torch.tensor(0.)
+                for name, param in model.named_parameters():
+                    if param.requires_grad:
+                        l2_reg += torch.norm(param.data - W_old[name].data)
+                loss += l2_lambda * l2_reg
 
             running_loss += loss.item()*y.shape[0]
             samples += y.shape[0]
@@ -41,13 +42,9 @@ def train_op(model, loader, optimizer, epochs=1, W_old=None, l2_lambda=0.01, see
 
       
 def eval_op(model, loader, seed=0):
-#    print("-----0")
     random.seed(seed)
-#    print("-----1")
     np.random.seed(seed)
-#    print("-----2")
     torch.random.manual_seed(seed)
-#    print("-----3")
 
     model.train()
     samples, correct = 0.0, 0.0

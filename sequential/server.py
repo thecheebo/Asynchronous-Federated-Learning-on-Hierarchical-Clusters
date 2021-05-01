@@ -19,7 +19,7 @@ from data_utils import split_data, CustomSubset
 
 
 class Server(FederatedTrainingDevice):
-    def __init__(self, model_fn, data, testloader, child_list=[], lr=0.001, N_CLIENTS=1, res_file="lol.txt", beta=5, seed=0):
+    def __init__(self, model_fn, data, testloader, child_list=[], lr=0.001, N_CLIENTS=1, res_file="lol.txt", beta=5, seed=0, asynch=True):
         super().__init__(model_fn, data)
         self.res_file = res_file
         self.testloader = testloader
@@ -33,6 +33,7 @@ class Server(FederatedTrainingDevice):
         self.beta = beta
 
         self.seed = seed
+        self.asynch = asynch
 
 
     def send(self):
@@ -47,7 +48,10 @@ class Server(FederatedTrainingDevice):
             obj = self.obj_q.get()
             self.obj_q.task_done()
             t = obj.time
-            alpha = self.lr * pow((self.TIME - t + 1), self.beta) * obj.num / self.N_CLIENTS
+            if self.asynch:
+                alpha = self.lr * pow((self.TIME - t + 1), self.beta) * obj.num / self.N_CLIENTS
+            else:
+                alpha = 1
             dw = obj.model
             for name in dw:
                 self.W[name].data += dw[name].data * alpha
@@ -67,4 +71,5 @@ class Server(FederatedTrainingDevice):
     
     def select_childs(self, childs, frac=1.0):
         return random.sample(childs, int(len(childs)*frac))
+
 
