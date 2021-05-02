@@ -32,8 +32,8 @@ elif [[ $1 == "a" && $2 == "n" ]]; then
 	    done
 	done
 elif [[ $1 == "s" && $2 == "h" ]]; then
-	ROUNDS=10
-	lr=0.001
+	ROUNDS=500
+	lr=0.0001
 	l2_lambda=0.01
 	select_rate=0.9
 	

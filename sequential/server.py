@@ -44,18 +44,25 @@ class Server(FederatedTrainingDevice):
 
 
     def update(self):
-        while not self.obj_q.empty():
-            obj = self.obj_q.get()
-            self.obj_q.task_done()
-            t = obj.time
-            if self.asynch:
+        if self.asynch:
+            while not self.obj_q.empty():
+                obj = self.obj_q.get()
+                self.obj_q.task_done()
+                t = obj.time
                 alpha = self.lr * pow((self.TIME - t + 1), self.beta) * obj.num / self.N_CLIENTS
-            else:
-                alpha = 1
-            dw = obj.model
-            for name in dw:
-                self.W[name].data += dw[name].data * alpha
-            print("[Server - upd]: Updated model with T = %s, t = %s, num = %s, alpha = %s" % (self.TIME, t, obj.num, alpha))
+                for name in dw:
+                    self.W[name].data += dw[name].data * alpha
+                dw = obj.model
+                print("[Server - upd]: Updated model with T = %s, t = %s, num = %s, alpha = %s" % (self.TIME, t, obj.num, alpha))
+        else:
+            dws = []
+            while not self.obj_q.empty():
+                dws.append(self.obj_q.get().model)
+                self.obj_q.task_done()
+            reduce_add_average(targets=[self.W], sources=dws)
+            print("[Server - upd]: Updated model with T = %s, num = %s" % (self.TIME, len(dws)))
+
+
 
 
     def eval(self):
