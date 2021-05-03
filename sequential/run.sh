@@ -1,8 +1,8 @@
 #!/bin/bash
 
 if [[ $1 == "a" && $2 == "h" ]]; then
-	ROUNDS=10
-	lr=0.001
+	ROUNDS=600
+	lr=0.0015
 	l2_lambda=0.01
 	select_rate=0.9
 	
@@ -18,8 +18,8 @@ if [[ $1 == "a" && $2 == "h" ]]; then
 	    done
 	done
 elif [[ $1 == "a" && $2 == "n" ]]; then
-	ROUNDS=10
-	lr=0.001
+	ROUNDS=600
+	lr=0.0015
 	l2_lambda=0.01
 	select_rate=0.9
 	
@@ -32,8 +32,8 @@ elif [[ $1 == "a" && $2 == "n" ]]; then
 	    done
 	done
 elif [[ $1 == "s" && $2 == "h" ]]; then
-	ROUNDS=500
-	lr=0.0001
+	ROUNDS=600
+	lr=0.0015
 	l2_lambda=0.01
 	select_rate=0.9
 	
