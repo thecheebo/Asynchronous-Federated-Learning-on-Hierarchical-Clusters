@@ -50,9 +50,9 @@ class Server(FederatedTrainingDevice):
                 self.obj_q.task_done()
                 t = obj.time
                 alpha = self.lr * pow((self.TIME - t + 1), self.beta) * obj.num / self.N_CLIENTS
+                dw = obj.model
                 for name in dw:
                     self.W[name].data += dw[name].data * alpha
-                dw = obj.model
                 print("[Server - upd]: Updated model with T = %s, t = %s, num = %s, alpha = %s" % (self.TIME, t, obj.num, alpha))
         else:
             dws = []
