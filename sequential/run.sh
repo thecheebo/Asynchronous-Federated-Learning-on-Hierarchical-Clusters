@@ -1,7 +1,7 @@
 #!/bin/bash
 
 if [[ $1 == "a" && $2 == "h" ]]; then
-	ROUNDS=10
+	ROUNDS=5000
 	lr=0.001
 	l2_lambda=0.01
 	select_rate=0.9
