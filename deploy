@@ -7,3 +7,7 @@ git clone https://github.com/dargooo/federated-learning.git
 cd federated-learning
 # git checkout stop_flag
 pip install -r requirements.txt
+
+conda install -c conda-forge notebook
+jupyter notebook --no-browser --port=8889
+ssh -N -f -L locathost:8888:localhost:8889 yijunw4@uiuc1
