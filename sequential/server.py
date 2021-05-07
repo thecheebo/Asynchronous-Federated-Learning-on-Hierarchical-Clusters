@@ -23,7 +23,7 @@ class Server(FederatedTrainingDevice):
         super().__init__(model_fn, data)
         self.res_file = res_file
         self.testloader = testloader
-        self.obj_q = Queue(maxsize=20)
+        self.obj_q = Queue(maxsize=60)
         self.child_list = child_list
         self.TIME = 0
         self.start_time = time.time()
@@ -49,7 +49,7 @@ class Server(FederatedTrainingDevice):
                 obj = self.obj_q.get()
                 self.obj_q.task_done()
                 t = obj.time
-                alpha = self.lr * pow((self.TIME - t + 1), self.beta) * obj.num / self.N_CLIENTS
+                alpha = pow((self.TIME - t + 1), self.beta) * obj.num / self.N_CLIENTS
                 dw = obj.model
                 for name in dw:
                     self.W[name].data += dw[name].data * alpha
