@@ -28,7 +28,7 @@ def train_op(model, loader, optimizer, epochs=1, W_old=None, l2_lambda=0.01, see
                 l2_reg = torch.tensor(0.)
                 for name, param in model.named_parameters():
                     if param.requires_grad:
-                        l2_reg += torch.norm(param.data - W_old[name].data)
+                        l2_reg += torch.nn.MSELoss(reduction='sum')(param, W_old[name])
                 loss += l2_lambda * l2_reg
 
             running_loss += loss.item()*y.shape[0]
