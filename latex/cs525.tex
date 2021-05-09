@@ -1,3 +1,4 @@
+% !TeX root = ./cs525.tex
 \documentclass[10pt,twocolumn,letterpaper]{article}
 
 \usepackage{cvpr}
@@ -94,6 +95,8 @@ We plan on looking into segmented network capacity and will focusing utilizing t
 In this paper, we examine how clustered network topologies could have an effect on several key measures compared to fully decentralized federated learning topology. Some key measures we look at including client-server network traffic, convergence time, and model accuracy. In the clustered network topology, each client will belong to a cluster. Each cluster will have a leader. We still have a notion of a central server. However, the responsibilities of the central server are limited to initiating a new round of training, and talking to leaders to collect updated models. In this topology, clients do not communicate directly with the central server. This should significantly reduce the amount of network ingress incurred at the central server. We are also able to observe some interesting results on the convergence time after adopting the clustered topology. 
 
 There has been some existing work \cite{9207469,2019arXiv190606629G,9174890,9016505} on clustered network topology. However, they are mainly focused on model performance and accuracy under heterogeneous data distribution. In this paper, we examine the effect of clustered network topology on the system performance of federated learning systems. Specifically, we dive into the effect on client-server network bandwidth, model convergence time, and model accuracy. We also explore different architectural patterns for clustered federated learning and their effects on the key measurements mentioned above.
+
+The paper is structured with different sections. In the Introduction section, we go through some background on federated learning as well as a high level description of the work we are doing. In the Related Work section, we go through some work done in the field of clustering federated learing, and compare them to the work we are doing. In the Approach section, we are describing in details how we approach this problem. This includes a problem formulation, different patterns for clustering, as well as a convergence analysis. Then we present our experiment results. In the last section, we discuss our findings and present future work.
 
 \section{Related Work}
 
