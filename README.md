@@ -5,7 +5,7 @@ In AsyncHierFed Learning, the central server uses either the network topology or
 devices). In each cluster, a special aggregator device is selected to enable hierarchical learning, leads to efficient communication between server and workers, so that the
 burden of the server can be significantly reduced. In addition, asynchronous federated learning schema is used to tolerate heterogeneity of the system 
 
-<a href="Federated Learning Research Paper.pdf" class="image fit">
+<a href="https://github.com/thecheebo/Asynchronous-Federated-Learning-on-Hierarchical-Clusters/blob/main/Federated%20Learning%20Research%20Paper.pdf" class="image fit">Research Paper</a>
 
 ##### Table of Contents  
 
