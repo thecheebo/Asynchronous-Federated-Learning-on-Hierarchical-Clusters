@@ -6,9 +6,12 @@ devices). In each cluster, a special aggregator device is selected to enable hie
 burden of the server can be significantly reduced. In addition, asynchronous federated learning schema is used to tolerate heterogeneity of the system 
 
 ##### Table of Contents  
-[Materials](#materials)  
-[Inital Set Up](#initial-set-up)  
 
+TBD 
+
+[Setup](#setup)  
+
+## Setup
 
 ## baseline run:     
 ###	python server.py 0 <num_of_clients>         
